@@ -39,3 +39,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: `pnpm test:run` (55 tests), `pnpm build`, `CI=true pnpm lint`. The sidebar test fails on three code changes made on purpose. `.git/hooks` has no hook files after `pnpm install`.
 - Next: Task 2 (unused UI components, packages and files). The template `frontend/README.md` must be replaced, because it names removed code (NFR-5).
 - Open questions: `__pycache__/` in `.gitignore` (from slice 00).
+
+## 2026-11-06 — 01-frontend-trim
+- Done: Task 2 of `docs/plans/01-frontend-trim.md`. Deleted 29 UI components (kept the 34 on the list and `kbd`). Deleted the decision 3 files that no kept file uses. Removed 10 packages. `universal-cookie` stays, because `useCookies` in `default.vue` needs it as a peer. Replaced the template `frontend/README.md` and the `index.html` title (NFR-5). The reviewer found 2 defects. Both are fixed: a coverage glob for the deleted `src/services/`, and theme-editor exports in `constants/themes.ts`.
+- Verified with: `pnpm test:run` (55 tests), `pnpm build`, `CI=true pnpm lint`. The NFR-4 import grep has no matches. The NFR-5 text grep matches only the negative assertions in `__tests__`. `pnpm peers check` shows only the two issues that the template also has.
+- Next: Task 3 (frontend in Docker and compose, pnpm in the Makefile, delete the template).
+- Open questions: the Task 2 Step 4 text grep conflicts with the Task 1 tests. It needs `--exclude-dir=__tests__`. `__pycache__/` in `.gitignore` (from slice 00).

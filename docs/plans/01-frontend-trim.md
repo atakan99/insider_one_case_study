@@ -122,21 +122,21 @@ All `src/` paths in this task are under `frontend/`.
 - Consumes: the kept file set from Task 1.
 - Produces: the final dependency list. Task 3 builds it in Docker with `pnpm install --frozen-lockfile`.
 
-- [ ] **Step 1: Delete the UI components that are not in the list.** Keep `kbd` (decision 4).
+- [x] **Step 1: Delete the UI components that are not in the list.** Keep `kbd` (decision 4).
 
-- [ ] **Step 2: Delete the decision 3 files.** For each candidate, check `grep -rn "<path or name>" frontend/src` first. Delete only when no kept file imports it.
+- [x] **Step 2: Delete the decision 3 files.** For each candidate, check `grep -rn "<path or name>" frontend/src` first. Delete only when no kept file imports it.
 
-- [ ] **Step 3: Remove the unused packages.** For each candidate in `requirements.md`, run `grep -rn "<package>" frontend/src frontend/vite.config.ts`. Remove it with `pnpm remove` when there is no match. Then run `pnpm install` (NFR-7).
+- [x] **Step 3: Remove the unused packages.** For each candidate in `requirements.md`, run `grep -rn "<package>" frontend/src frontend/vite.config.ts`. Remove it with `pnpm remove` when there is no match. Then run `pnpm install` (NFR-7).
 
-- [ ] **Step 4: Verify the imports and the text (NFR-4, NFR-5, NFR-9).**
+- [x] **Step 4: Verify the imports and the text (NFR-4, NFR-5, NFR-9).**
   ```bash
   cd frontend && pnpm build >/dev/null && grep -rnE "vue-i18n|\\\$t\(|use-auth|stores/auth|custom-theme|language-change|team-switcher|example-(tasks|system-config)" src; echo "imports_exit=$?"; grep -rniE "acme|evil corp|m@example\.com|/tasks|/billing" . --exclude-dir=node_modules --exclude-dir=dist; echo "text_exit=$?"
   ```
   Expected: `imports_exit=1` and `text_exit=1` (no matches). `src/types/*.d.ts` are generated again by the build and are part of the first grep.
 
-- [ ] **Step 5: Run.** `cd frontend && pnpm test:run && pnpm build && pnpm lint`. Expected: exit 0.
+- [x] **Step 5: Run.** `cd frontend && pnpm test:run && pnpm build && pnpm lint`. Expected: exit 0.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
   ```bash
   git add frontend
   git commit -m "chore(frontend): remove unused ui components and packages"

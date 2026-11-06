@@ -66,7 +66,6 @@ export default defineConfig({
       reporter: ['text', 'html'],
       include: [
         'src/lib/**/*.ts',
-        'src/services/**/*.ts',
         'src/stores/**/*.ts',
         'src/composables/**/*.ts',
         'src/utils/**/*.ts',

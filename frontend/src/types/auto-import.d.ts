@@ -10,13 +10,11 @@ export {}
 declare global {
   const API_BASE_URL: typeof import('../constants/app-config').API_BASE_URL
   const API_TIMEOUT: typeof import('../constants/app-config').API_TIMEOUT
-  const CONTENT_LAYOUTS: typeof import('../constants/themes').CONTENT_LAYOUTS
   const DEFAULT_PAGE_SIZE: typeof import('../constants/app').DEFAULT_PAGE_SIZE
   const EffectScope: typeof import('vue').EffectScope
   const PAGE_SIZES: typeof import('../constants/app').PAGE_SIZES
   const RADIUS: typeof import('../constants/themes').RADIUS
   const THEMES: typeof import('../constants/themes').THEMES
-  const THEME_PRIMARY_COLORS: typeof import('../constants/themes').THEME_PRIMARY_COLORS
   const computed: typeof import('vue').computed
   const createApp: typeof import('vue').createApp
   const customRef: typeof import('vue').customRef
