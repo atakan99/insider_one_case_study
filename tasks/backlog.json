@@ -1,0 +1,69 @@
+[
+  {
+    "id": "00-skeleton",
+    "title": "Repo skeleton",
+    "spec": "docs/case.md",
+    "acceptance": [
+      "docker compose up starts Postgres, the Go API and the mock provider",
+      "make verify passes",
+      "Every later slice has a fixed place for its spec, plan, decisions and progress"
+    ],
+    "passes": false
+  },
+  {
+    "id": "01-frontend-trim",
+    "title": "Trim the Vue template into frontend/",
+    "spec": "docs/specs/01-frontend-trim/",
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "02-seed-users",
+    "title": "Seed users",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "03-mock-provider",
+    "title": "Mock SMS and email provider",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "04-segment-rules",
+    "title": "Segment rules",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "05-content-generation",
+    "title": "Content generation",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "06-review-approve",
+    "title": "Review and approve",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "07-send-queue",
+    "title": "Send queue",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  },
+  {
+    "id": "08-dashboard-metrics",
+    "title": "Dashboard and metrics",
+    "spec": null,
+    "acceptance": [],
+    "passes": false
+  }
+]
