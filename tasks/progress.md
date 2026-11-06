@@ -21,3 +21,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: `python3 -B -m unittest discover -s .claude/skills/ste-writing/scripts` (11 tests, OK). The session lists `executor`, `reviewer` and `ste-writing`.
 - Next: Task 3 (Go module, config, health endpoints, two binaries).
 - Open questions: `.gitignore` does not include `__pycache__/`. The tests write it when they run without `-B`.
+
+## 2026-11-06 — 00-skeleton
+- Done: Task 3 of `docs/plans/00-skeleton.md`. Added the Go module `campaigncomposer` (go 1.27, `pgx/v5` v5.12.0), `internal/config`, `internal/httpapi` (health endpoints), `cmd/api` and `cmd/mockprovider`. The reviewer found 3 defects in the two `main.go` files. All 3 are fixed: a 2 s timeout on the startup DB ping, no exit 0 when a listen error races a signal, and a second Ctrl-C that stops the process at once.
+- Verified with: `go vet ./... && go build ./... && test -z "$(gofmt -l .)"` (prints `ok`). `go test -count=1 ./...` (config and httpapi pass). A manual run with an unreachable DB host (`10.255.255.1`): `/healthz` gave 200 and `/readyz` gave 503 within 3 s, and SIGTERM shut down cleanly.
+- Next: Task 4 (Dockerfile, docker-compose, Makefile, `.env.example`).
+- Open questions: `.gitignore` does not include `__pycache__/` (from Task 2).

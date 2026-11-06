@@ -1,0 +1,93 @@
+// Command api runs the campaign HTTP API.
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"campaigncomposer/internal/config"
+	"campaigncomposer/internal/httpapi"
+)
+
+const (
+	shutdownTimeout    = 10 * time.Second
+	startupPingTimeout = 2 * time.Second
+)
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	if err := run(); err != nil {
+		slog.Error("api stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// pgxpool.New connects lazily. It fails only on an invalid DATABASE_URL.
+	// If Postgres is down, the process keeps running and /readyz reports it.
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	// Bound the startup ping, so that an unreachable host cannot delay the listener.
+	pingCtx, cancelPing := context.WithTimeout(ctx, startupPingTimeout)
+	err = pool.Ping(pingCtx)
+	cancelPing()
+	if err != nil {
+		slog.Warn("initial db ping failed", "err", err)
+	}
+
+	mux := http.NewServeMux()
+	httpapi.RegisterHealth(mux, pool)
+
+	srv := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		slog.Info("api listening", "addr", cfg.HTTPAddr, "llm_mode", cfg.LLMMode)
+		errc <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+	}
+	// Restore default signal handling, so a second Ctrl-C stops the process at once.
+	stop()
+
+	slog.Info("api shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	// A listen error can race the signal. Do not exit 0 if the server never served.
+	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}

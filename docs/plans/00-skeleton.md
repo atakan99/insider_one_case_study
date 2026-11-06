@@ -208,38 +208,38 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
   - `httpapi.RegisterHealth(mux *http.ServeMux, db httpapi.Pinger)`, which adds `GET /healthz` and `GET /readyz`
   - Env vars: `HTTP_ADDR` (default `:8080`), `DATABASE_URL` (required), `LLM_MODE` (`mock` | `anthropic`, default `mock`), `ANTHROPIC_API_KEY`. Mock provider: `HTTP_ADDR` default `:8081`.
 
-- [ ] **Step 1: Write failing config tests** in `config_test.go`. Use a map-backed `getenv`.
+- [x] **Step 1: Write failing config tests** in `config_test.go`. Use a map-backed `getenv`.
   - `TestLoad_Defaults`: only `DATABASE_URL` set → `HTTPAddr == ":8080"`, `LLMMode == "mock"`, err nil.
   - `TestLoad_MissingDatabaseURL`: empty env → err non-nil, message contains `DATABASE_URL`.
   - `TestLoad_AnthropicWithoutKey`: `LLM_MODE=anthropic`, no key → err contains `ANTHROPIC_API_KEY`.
   - `TestLoad_InvalidLLMMode`: `LLM_MODE=gpt` → err contains `LLM_MODE`.
 
-- [ ] **Step 2: Run, expect FAIL.** `cd backend && go test ./internal/config/` → build failure, `Load` undefined.
+- [x] **Step 2: Run, expect FAIL.** `cd backend && go test ./internal/config/` → build failure, `Load` undefined.
 
-- [ ] **Step 3: Implement `config.Load`.**
+- [x] **Step 3: Implement `config.Load`.**
 
-- [ ] **Step 4: Run, expect PASS.** `cd backend && go test ./internal/config/`
+- [x] **Step 4: Run, expect PASS.** `cd backend && go test ./internal/config/`
 
-- [ ] **Step 5: Write failing health tests** in `health_test.go`. Use `httptest` and a fake `Pinger` with a configurable error.
+- [x] **Step 5: Write failing health tests** in `health_test.go`. Use `httptest` and a fake `Pinger` with a configurable error.
   - `TestHealthz_OK`: GET `/healthz` → 200, body `{"status":"ok"}`.
   - `TestReadyz_DBUp`: fake returns nil → 200, body `{"status":"ok","db":"ok"}`.
   - `TestReadyz_DBDown`: fake returns `errors.New("conn refused")` → 503, body `{"status":"unavailable","db":"down"}`. The body must **not** contain `conn refused` (no internal error leak).
   - `TestReadyz_PingTimeout`: fake blocks until ctx is done → 503 within 3s. The handler applies a 2s ping timeout.
   - `TestHealthz_MethodNotAllowed`: POST `/healthz` → 405.
 
-- [ ] **Step 6: Run, expect FAIL.** `cd backend && go test ./internal/httpapi/`
+- [x] **Step 6: Run, expect FAIL.** `cd backend && go test ./internal/httpapi/`
 
-- [ ] **Step 7: Implement `httpapi.RegisterHealth`.** Use Go 1.22+ method patterns (`mux.HandleFunc("GET /healthz", …)`) and `Content-Type: application/json`.
+- [x] **Step 7: Implement `httpapi.RegisterHealth`.** Use Go 1.22+ method patterns (`mux.HandleFunc("GET /healthz", …)`) and `Content-Type: application/json`.
 
-- [ ] **Step 8: Run, expect PASS.** `cd backend && go test ./...`
+- [x] **Step 8: Run, expect PASS.** `cd backend && go test ./...`
 
-- [ ] **Step 9: Implement `cmd/api/main.go`.** Load config (exit 1 with message on error), `pgxpool.New`, `httpapi.RegisterHealth`, `http.Server` with `ReadHeaderTimeout: 5s`. Shut down gracefully on SIGINT/SIGTERM (10s). Log with `log/slog` JSON. A failed initial DB connection must not exit: `/readyz` reports it.
+- [x] **Step 9: Implement `cmd/api/main.go`.** Load config (exit 1 with message on error), `pgxpool.New`, `httpapi.RegisterHealth`, `http.Server` with `ReadHeaderTimeout: 5s`. Shut down gracefully on SIGINT/SIGTERM (10s). Log with `log/slog` JSON. A failed initial DB connection must not exit: `/readyz` reports it.
 
-- [ ] **Step 10: Implement `cmd/mockprovider/main.go`.** `GET /healthz` → `{"status":"ok"}` on `HTTP_ADDR` (default `:8081`), with the same graceful shutdown. Send endpoints, failures and 429s belong to slice `03-mock-provider`.
+- [x] **Step 10: Implement `cmd/mockprovider/main.go`.** `GET /healthz` → `{"status":"ok"}` on `HTTP_ADDR` (default `:8081`), with the same graceful shutdown. Send endpoints, failures and 429s belong to slice `03-mock-provider`.
 
-- [ ] **Step 11: Verify.** `cd backend && go vet ./... && go build ./... && test -z "$(gofmt -l .)" && echo ok` → `ok`
+- [x] **Step 11: Verify.** `cd backend && go vet ./... && go build ./... && test -z "$(gofmt -l .)" && echo ok` → `ok`
 
-- [ ] **Step 12: Commit.**
+- [x] **Step 12: Commit.**
   ```bash
   git add backend
   git commit -m "feat(backend): go module, config, health endpoints, api and mockprovider binaries"
