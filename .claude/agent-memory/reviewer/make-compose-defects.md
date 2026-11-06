@@ -1,6 +1,6 @@
 ---
 name: make-compose-defects
-description: Makefile and docker-compose defects found in the 00-skeleton Task 4 review (2026-11-06); check them when Makefile, compose or Dockerfile change
+description: Makefile, docker-compose, Dockerfile and nginx defects found in the 00 Task 4 and 01 Task 3 reviews (2026-11-06); check them when Makefile, compose or Dockerfile change
 metadata:
   type: project
 ---
@@ -16,3 +16,10 @@ Defects found in the 00-skeleton Task 4 review on 2026-11-06:
 
 **Why:** these pass on the author's Mac and fail on a grader machine or on a first clean start.
 **How to apply:** for each new Make target, `$(shell ...)` call, compose service or healthcheck, check these patterns again. Also see [[go-startup-defects]].
+
+Defects found in the 01-frontend-trim Task 3 review on 2026-11-06:
+
+- `docker run -v frontend:/app -v /app/node_modules ... pnpm install`: pnpm put its store (432 MB) in `/app/.pnpm-store`, thus in the host's `frontend/`. Neither `.gitignore` nor `.dockerignore` listed it. Check for new untracked folders after each Docker run with a bind mount.
+- A container that runs as root writes root-owned files (`dist/`, the store) into a bind mount on Linux. Docker Desktop on macOS hides this.
+- nginx with `try_files $uri $uri/ ...` and a port mapping: a request for a folder without a slash (`/assets`) gets `301 Location: http://host:<container port>/`. Use `absolute_redirect off`.
+- nginx `expires` plus `add_header Cache-Control` sends two Cache-Control headers.

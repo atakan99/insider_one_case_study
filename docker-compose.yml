@@ -57,6 +57,15 @@ services:
     ports:
       - "8081:8081"
 
+  frontend:
+    build:
+      context: .
+      target: frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      - api
+
 volumes:
   pgdata:
   redisdata:

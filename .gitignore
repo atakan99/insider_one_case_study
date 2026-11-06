@@ -5,6 +5,7 @@
 
 # Build and test output
 node_modules/
+.pnpm-store/
 dist/
 coverage/
 backend/bin/

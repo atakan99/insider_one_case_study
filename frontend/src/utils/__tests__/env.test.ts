@@ -15,7 +15,7 @@ describe('envSchema validation', () => {
       if (result.success) {
         expect(result.data.VITE_SERVER_API_URL).toBe('https://api.example.com')
         expect(result.data.VITE_SERVER_API_PREFIX).toBe('/v1')
-        expect(result.data.VITE_SERVER_API_TIMEOUT).toBe(5000) // default value
+        expect(result.data.VITE_SERVER_API_TIMEOUT).toBe(10000) // default value
       }
     })
 
@@ -49,31 +49,30 @@ describe('envSchema validation', () => {
     })
   })
 
+  describe('defaults for a clean clone (no .env)', () => {
+    it('parses an empty env to the .env.example values', () => {
+      const result = EnvSchema.safeParse({})
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data).toEqual({
+          VITE_SERVER_API_URL: 'http://localhost:8080',
+          VITE_SERVER_API_PREFIX: '/api',
+          VITE_SERVER_API_TIMEOUT: 10000,
+        })
+      }
+    })
+
+    it('uses the default URL when only the prefix is set', () => {
+      const result = EnvSchema.safeParse({ VITE_SERVER_API_PREFIX: '/v1' })
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.VITE_SERVER_API_URL).toBe('http://localhost:8080')
+        expect(result.data.VITE_SERVER_API_PREFIX).toBe('/v1')
+      }
+    })
+  })
+
   describe('invalid environment variables', () => {
-    it('should fail when VITE_SERVER_API_URL is missing', () => {
-      const invalidEnv = {
-        VITE_SERVER_API_PREFIX: '/api',
-      }
-
-      const result = EnvSchema.safeParse(invalidEnv)
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.error.issues[0].path).toContain('VITE_SERVER_API_URL')
-      }
-    })
-
-    it('should fail when VITE_SERVER_API_PREFIX is missing', () => {
-      const invalidEnv = {
-        VITE_SERVER_API_URL: 'https://api.example.com',
-      }
-
-      const result = EnvSchema.safeParse(invalidEnv)
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.error.issues[0].path).toContain('VITE_SERVER_API_PREFIX')
-      }
-    })
-
     it('should fail when VITE_SERVER_API_URL is not a valid URL', () => {
       const invalidEnv = {
         VITE_SERVER_API_URL: 'not-a-url',

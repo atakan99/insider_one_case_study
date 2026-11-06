@@ -45,3 +45,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: `pnpm test:run` (55 tests), `pnpm build`, `CI=true pnpm lint`. The NFR-4 import grep has no matches. The NFR-5 text grep matches only the negative assertions in `__tests__`. `pnpm peers check` shows only the two issues that the template also has.
 - Next: Task 3 (frontend in Docker and compose, pnpm in the Makefile, delete the template).
 - Open questions: the Task 2 Step 4 text grep conflicts with the Task 1 tests. It needs `--exclude-dir=__tests__`. `__pycache__/` in `.gitignore` (from slice 00).
+
+## 2026-11-06 — 01-frontend-trim
+- Done: Task 3 of `docs/plans/01-frontend-trim.md`. The root `Dockerfile` has targets `frontend-build` and `frontend` (nginx). Compose serves the frontend on port 3000. The Makefile runs pnpm in a container when pnpm is missing. Added D-009 and D-010. Deleted `shadcn-vue-admin-main/`. User decision: the env validator uses the `.env.example` values as defaults, so `pnpm dev` works without `.env`. The reviewer found 7 defects. Fixed 6: the pnpm store in the host folder, root-owned files on Linux, the nginx redirect port, a double Cache-Control header, missing files that returned the app, and the NFR-3 acceptance text.
+- Verified with: headless Chrome checks of FR-1 to FR-8 on `pnpm dev` (no `.env`) and on the compose build. `curl` checks of the nginx headers and status codes. A build-arg override reaches the built JS. `PATH=/usr/bin:/bin:/usr/local/bin make lint test verify` exit 0, with no `.pnpm-store` left. `make verify` and `make down` exit 0.
+- Next: user review of slice 01. The user sets `01-frontend-trim.passes`. Then slice 02-seed-users (no spec yet).
+- Open questions: `CLAUDE.md` is out of date (reviewer defect 6). I did not change it, because the request came from a subagent. `__pycache__/` in `.gitignore`. The Task 2 Step 4 grep needs `--exclude-dir=__tests__`.

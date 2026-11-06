@@ -155,15 +155,15 @@ All `src/` paths in this task are under `frontend/`.
 - Consumes: `frontend/` from Task 2. Root `Dockerfile` and Make variables from slice 00.
 - Produces: compose service `frontend` (host port 3000). Make variable `PNPM`.
 
-- [ ] **Step 1: Add the Dockerfile targets.**
+- [x] **Step 1: Add the Dockerfile targets.**
   - `frontend-build`: `node:24-alpine`, `corepack enable`, copy `frontend/package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml`, `pnpm install --frozen-lockfile`, copy `frontend/`, `pnpm build`. Build args with defaults: `VITE_SERVER_API_URL=http://localhost:8080`, `VITE_SERVER_API_PREFIX=/api`, `VITE_SERVER_API_TIMEOUT=10000`, set as `ENV` before the build.
   - `frontend`: `nginxinc/nginx-unprivileged:1.29-alpine`, copy `dist/` to `/usr/share/nginx/html` and `frontend/nginx.conf` to `/etc/nginx/conf.d/default.conf`.
 
-- [ ] **Step 2: Write `frontend/nginx.conf`.** Listen on 8080. `try_files $uri $uri/ /index.html` (Review Focus 2). Long cache for `/assets/`, no cache for `index.html`.
+- [x] **Step 2: Write `frontend/nginx.conf`.** Listen on 8080. `try_files $uri $uri/ /index.html` (Review Focus 2). Long cache for `/assets/`, no cache for `index.html`.
 
-- [ ] **Step 3: Add the compose service.** `frontend`: build context `.`, target `frontend`, `ports: ["3000:8080"]`, `depends_on: api` (started, not healthy, because api has no healthcheck).
+- [x] **Step 3: Add the compose service.** `frontend`: build context `.`, target `frontend`, `ports: ["3000:8080"]`, `depends_on: api` (started, not healthy, because api has no healthcheck).
 
-- [ ] **Step 4: Update the Makefile.**
+- [x] **Step 4: Update the Makefile.**
   ```make
   ifeq ($(shell command -v pnpm 2>/dev/null),)
   PNPM = docker run --rm -v "$(CURDIR)/frontend:/app" -v /app/node_modules -w /app node:24-alpine \
@@ -178,36 +178,36 @@ All `src/` paths in this task are under `frontend/`.
   - `verify`: add `$(PNPM) build` (NFR-1).
   - `up`: add a curl of `localhost:3000/` with the same retry.
 
-- [ ] **Step 5: Update the docs.** Add two entries to `DECISIONS.md`:
+- [x] **Step 5: Update the docs.** Add two entries to `DECISIONS.md`:
   - D-009 "Frontend from the shadcn-vue-admin template, trimmed". It keeps file-based routing and auto-imports. It removes `AGENTS.md` and `.agents/`.
   - D-010 "Compose serves the built frontend with nginx" (decision 2).
 
   Then: `README.md`: frontend at `http://localhost:3000`, `pnpm dev` for local work. `docs/architecture.md`: add the `frontend` service. `tasks/backlog.json`: set `01-frontend-trim.acceptance` to FR-1 to FR-8 and NFR-1 to NFR-10, one short string each. Do not change `passes`.
 
-- [ ] **Step 6: Verify compose (Review Focus 2 and 4).**
+- [x] **Step 6: Verify compose (Review Focus 2 and 4).**
   ```bash
   make up && curl -s localhost:3000/campaigns/123 | grep -c '<div id="app">' && docker compose exec frontend sh -c 'grep -l "localhost:8080" /usr/share/nginx/html/assets/*.js | head -1'
   ```
   Expected: `make up` exits 0, then `1`, then one `.js` file path.
 
-- [ ] **Step 7: Verify `make test` without Node, pnpm and Go.** `PATH=/usr/bin:/bin:/usr/local/bin make test`. Expected: Go and frontend tests run in containers and pass. `ls frontend/node_modules/.pnpm | head -1` is unchanged from before the run.
+- [x] **Step 7: Verify `make test` without Node, pnpm and Go.** `PATH=/usr/bin:/bin:/usr/local/bin make test`. Expected: Go and frontend tests run in containers and pass. `ls frontend/node_modules/.pnpm | head -1` is unchanged from before the run.
 
-- [ ] **Step 8: Browser checks (FR-1 to FR-8).** Run `cd frontend && pnpm dev`. Check in the browser:
+- [x] **Step 8: Browser checks (FR-1 to FR-8).** Run `cd frontend && pnpm dev`. Check in the browser:
   - no console errors on load (FR-1)
   - `/` goes to `/campaigns/new` (FR-2)
   - the three pages, the 404 page, the sidebar and the header look as the FRs say (FR-3 to FR-6)
   - select dark, reload, and the page stays dark (FR-7)
   - Ctrl+K or ⌘K lists only "New campaign" and "Campaigns" (FR-8)
 
-- [ ] **Step 9: Delete the template.** `rm -rf shadcn-vue-admin-main`. Then `make verify && make down`. Expected: exit 0.
+- [x] **Step 9: Delete the template.** `rm -rf shadcn-vue-admin-main`. Then `make verify && make down`. Expected: exit 0.
 
-- [ ] **Step 10: Write the summary for the user.** `requirements.md` gives its contents:
+- [x] **Step 10: Write the summary for the user.** `requirements.md` gives its contents:
   - the extra UI components that rule 1 kept
   - the removed packages
   - the files that decision 3 deleted
   - each change that is not in `goal.md`
 
-- [ ] **Step 11: Commit.**
+- [x] **Step 11: Commit.**
   ```bash
   git add Dockerfile .dockerignore docker-compose.yml Makefile DECISIONS.md README.md docs tasks frontend
   git commit -m "chore: serve frontend in compose, pnpm in make targets, remove template"

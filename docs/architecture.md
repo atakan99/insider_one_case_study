@@ -6,7 +6,7 @@
 - **mock-provider** — Go service that acts as an SMS and email provider.
 - **postgres** — the datastore (D-002).
 - **redis** — the send queue, with Redis Streams (D-007).
-- **frontend** — Vue app for the campaign flow.
+- **frontend** — Vue app for the campaign flow. Compose serves the built app with nginx on port 3000 (D-010).
 
 ## Folder tree
 

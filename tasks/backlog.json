@@ -14,7 +14,26 @@
     "id": "01-frontend-trim",
     "title": "Trim the Vue template into frontend/",
     "spec": "docs/specs/01-frontend-trim/",
-    "acceptance": [],
+    "acceptance": [
+      "FR-1: pnpm dev starts the app with no console errors",
+      "FR-2: / redirects to /campaigns/new",
+      "FR-3: /campaigns/new, /campaigns and /campaigns/123 show a placeholder page in the default layout",
+      "FR-4: an unknown route shows the 404 page",
+      "FR-5: the sidebar shows Campaign Composer and two links, with no team switcher and no user menu",
+      "FR-6: the header shows the sidebar toggle, the page search and the light and dark toggle only",
+      "FR-7: the light and dark choice stays after a reload",
+      "FR-8: the page search lists only the sidebar pages",
+      "NFR-1: pnpm build passes with no type errors",
+      "NFR-2: pnpm lint passes",
+      "NFR-3: pnpm test:run passes. Tests for removed code are deleted. Tests for kept code are not deleted",
+      "NFR-4: no file in frontend/src imports a removed file or package",
+      "NFR-5: no text refers to the template demo data",
+      "NFR-6: package.json name, version and private are set, with no template metadata or hook tools",
+      "NFR-7: pnpm-lock.yaml is generated again",
+      "NFR-8: frontend/LICENSE keeps the MIT notice",
+      "NFR-9: src/types/*.d.ts are generated again and refer to no removed file",
+      "NFR-10: .env.example has only the three VITE_SERVER_API values"
+    ],
     "passes": false
   },
   {

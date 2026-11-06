@@ -8,6 +8,12 @@ A marketer writes a brief for a campaign. Claude makes a segment rule and SMS an
 docker compose up
 ```
 
+- Frontend: http://localhost:3000
+- API: http://localhost:8080 (`/healthz`, `/readyz`)
+- Mock provider: http://localhost:8081
+
+For frontend work with hot reload, run `pnpm dev` in `frontend/` (http://localhost:5173).
+
 ## Test
 
 ```bash

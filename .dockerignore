@@ -1,15 +1,16 @@
 # The build context is the repo root. Send only what an image needs.
 .git
 .gitignore
-.vscode
+**/.vscode
 .claude
-.env
-.env.*
+**/.env
+**/.env.*
 ai-sessions
 docs
 tasks
 shadcn-vue-admin-main
 **/node_modules
+**/.pnpm-store
 **/dist
 backend/bin
 *.md

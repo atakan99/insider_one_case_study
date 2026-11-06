@@ -9,6 +9,19 @@ GO = cd backend && go
 GOFMT = cd backend && gofmt
 endif
 
+# Same for pnpm. The anonymous /app/node_modules volume keeps Linux packages
+# out of the host's frontend/node_modules. The pnpm store stays in the
+# container (/tmp). The container runs as root, so at the end it gives the
+# files that it wrote (dist/, src/types/) back to the host user.
+ifeq ($(shell command -v pnpm 2>/dev/null),)
+PNPM = docker run --rm -v "$(CURDIR)/frontend:/app" -v /app/node_modules -e CI=true \
+	-e HOST_ID=$(shell id -u):$(shell id -g) -w /app node:24-alpine \
+	sh -c 'corepack enable && pnpm install --frozen-lockfile --store-dir /tmp/pnpm-store && pnpm "$$@"; rc=$$?; \
+	chown -R "$$HOST_ID" dist src/types 2>/dev/null; exit $$rc' pnpm
+else
+PNPM = pnpm -C frontend
+endif
+
 .PHONY: up down test lint verify lint-docs
 
 up:
@@ -17,20 +30,23 @@ up:
 	@echo
 	curl -fsS --retry 15 --retry-delay 2 --retry-all-errors --retry-max-time 30 localhost:8081/healthz
 	@echo
+	curl -fsS --retry 15 --retry-delay 2 --retry-all-errors --retry-max-time 30 -o /dev/null -w "frontend %{http_code}\n" localhost:3000/
 
 down:
 	docker compose down
 
 test:
 	$(GO) test ./...
-	if [ -d frontend ]; then pnpm -C frontend test:run; fi
+	$(PNPM) test:run
 
 lint:
 	$(GO) vet ./...
 	@out="$$($(GOFMT) -l .)" || exit 1; \
 		if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+	CI=true $(PNPM) lint
 
 verify: lint test
+	$(PNPM) build
 	docker compose config -q
 
 # Warnings only. Not part of verify.

@@ -57,3 +57,17 @@ Each entry uses this format: Context, Options, Choice, Why. Each entry has 8 lin
 - **Options:** One Dockerfile per app, one multi-stage Dockerfile at the repo root.
 - **Choice:** One root `Dockerfile` (user decision). Target `go-service` with `ARG CMD` builds each Go binary. Slice 01 adds a frontend target.
 - **Why:** One file to read and one build context. `docker-compose.yml` selects the target and runs Postgres and Redis from official images.
+
+## D-009 Frontend from the shadcn-vue-admin template, trimmed
+
+- **Context:** The case asks for a Vue frontend. We need a sidebar layout, a light and dark theme, tables and dialogs.
+- **Options:** Start from nothing, use the `shadcn-vue-admin` template (MIT) as it is, use the template and remove what the flow does not use.
+- **Choice:** Trim the template into `frontend/`. Remove demo pages, mock login, UI languages, marketing site, theme editor and the template's `AGENTS.md` and `.agents/`. Keep file-based routing and auto-imports.
+- **Why:** The shell and components work and have tests. Each kept file has a planned use. Removing file-based routing would change every page file for no gain.
+
+## D-010 Compose serves the built frontend with nginx
+
+- **Context:** `docker compose up` must start the full app. Developers also need hot reload.
+- **Options:** nginx with the built `dist/`, `pnpm dev` in a container, `pnpm dev` only on the host.
+- **Choice:** Compose builds the `frontend` target and serves it with nginx on port 3000. Local work uses `pnpm dev` on port 5173.
+- **Why:** A static build is small and starts fast. nginx sends each unknown path to `index.html`, so deep links work after a reload.
