@@ -9,12 +9,12 @@ Each entry uses this format: Context, Options, Choice, Why. Each entry has 8 lin
 - **Choice:** Go.
 - **Why:** Workers and rate limiters need cheap concurrency. Go gives one static binary per service.
 
-## D-002 Postgres as the only datastore for now
+## D-002 Postgres as the datastore
 
 - **Context:** We must store users, campaigns and send state. Segment rules filter users.
-- **Options:** Postgres only, Postgres plus a queue service.
-- **Choice:** Postgres only. The send-queue slice decides the queue.
-- **Why:** Segment queries need SQL. One service is less to run and explain.
+- **Options:** Postgres, a document store.
+- **Choice:** Postgres is the system of record. The queue is in Redis (D-007).
+- **Why:** Segment queries need SQL. Postgres also holds the delivery status and the idempotency keys.
 
 ## D-003 Backend from scratch, one module, one binary per process
 
@@ -43,3 +43,17 @@ Each entry uses this format: Context, Options, Choice, Why. Each entry has 8 lin
 - **Options:** An ORM, `sqlc` for all queries, `sqlc` plus a hand-built SQL compiler.
 - **Choice:** `pgx` + `sqlc` for fixed queries. `internal/segment` compiles the validated rule into SQL with `$n` placeholders.
 - **Why:** `sqlc` cannot generate dynamic queries. Placeholders keep user values out of the SQL text.
+
+## D-007 Redis Streams as the queue
+
+- **Context:** Sends are asynchronous, at 100 messages per second per channel at most, with retries.
+- **Options:** A Postgres table with `FOR UPDATE SKIP LOCKED`, Redis Streams, NATS JetStream.
+- **Choice:** Redis Streams (user decision). Postgres keeps the idempotency keys and the delivery status.
+- **Why:** Consumer groups give at-least-once delivery and pending-entry retries. The send-queue spec designs streams, retry and the Postgres idempotency check.
+
+## D-008 One root Dockerfile for all app images
+
+- **Context:** The stack has several Go binaries and, from slice 01, a frontend.
+- **Options:** One Dockerfile per app, one multi-stage Dockerfile at the repo root.
+- **Choice:** One root `Dockerfile` (user decision). Target `go-service` with `ARG CMD` builds each Go binary. Slice 01 adds a frontend target.
+- **Why:** One file to read and one build context. `docker-compose.yml` selects the target and runs Postgres and Redis from official images.

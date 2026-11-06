@@ -1,2 +1,3 @@
 - [ste_check edge cases](ste-check-edge-cases.md) — inputs that broke ste_check.py in the 00 Task 2 review; re-test them after checker changes
 - [Go startup defects](go-startup-defects.md) — startup ping without timeout, listen-error race, signal not reset; check each new cmd/ binary
+- [Make and compose defects](make-compose-defects.md) — make shell fast path, gofmt exit masked, pg_isready socket, compose port `:0`

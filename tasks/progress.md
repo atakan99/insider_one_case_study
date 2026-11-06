@@ -27,3 +27,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: `go vet ./... && go build ./... && test -z "$(gofmt -l .)"` (prints `ok`). `go test -count=1 ./...` (config and httpapi pass). A manual run with an unreachable DB host (`10.255.255.1`): `/healthz` gave 200 and `/readyz` gave 503 within 3 s, and SIGTERM shut down cleanly.
 - Next: Task 4 (Dockerfile, docker-compose, Makefile, `.env.example`).
 - Open questions: `.gitignore` does not include `__pycache__/` (from Task 2).
+
+## 2026-11-06 — 00-skeleton
+- Done: Task 4 of `docs/plans/00-skeleton.md`. Added the root `Dockerfile` (target `go-service`), the root `.dockerignore`, `docker-compose.yml` (postgres, redis, api, mock-provider), `Makefile` and `.env.example`. User decisions: one root Dockerfile (D-008), Redis Streams as the queue (D-007, D-002 changed), and the frontend service waits for slice 01. The plan was updated for these decisions and for a new Step 5 check, because Compose v5 prints `:0` for `docker compose port` on a port that is not published. The reviewer found 7 defects. All are fixed: `command -v` under Make 3.81, a gofmt parse error that `lint` ignored, `pg_isready` on the socket during first init, an unquoted volume path, an ARG that split the module cache, the Step 5 check, and the plan snippet.
+- Verified with: Step 5 from empty volumes (`{"status":"ok","db":"ok"}`, redis `healthy`, `postgres {}`, `redis {}`). Step 6 (`503`). Step 7 without Go (tests pass in the container). `make verify` exit 0, `make down` exit 0. `make lint` exits 2 on a gofmt parse error. A build without `CMD` fails with a clear message.
+- Next: user review of slice 00. The user sets `00-skeleton.passes`. Then slice 01-frontend-trim.
+- Open questions: `.gitignore` does not include `__pycache__/` (from Task 2). The api does not read a `REDIS_URL` yet. The send-queue slice adds it.

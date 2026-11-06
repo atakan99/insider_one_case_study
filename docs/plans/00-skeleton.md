@@ -17,9 +17,9 @@ internal/
   delivery   queue, rate limiter, retry, idempotency
   store      sqlc-generated queries + migrations
 ```
- Postgres is the only infra service in this slice. Queue choice is deferred to the send slice (see Open Decisions). The frontend is out of scope here: `docs/specs/01-frontend-trim/` owns the move from `shadcn-vue-admin-main/` to `frontend/`.
+ Infra services in this slice: Postgres (datastore) and Redis (queue, D-007). The send-queue slice connects the worker to Redis. One multi-stage `Dockerfile` at the repo root builds every app image (D-008). The frontend is out of scope here: `docs/specs/01-frontend-trim/` owns the move from `shadcn-vue-admin-main/` to `frontend/`.
 
-**Tech Stack:** Go 1.27 (stdlib `net/http` routing, `github.com/jackc/pgx/v5`), Postgres 17, Docker Compose v2, GNU Make.
+**Tech Stack:** Go 1.27 (stdlib `net/http` routing, `github.com/jackc/pgx/v5`), Postgres 17, Redis 8, Docker Compose v2, GNU Make.
 
 **Spec:** `docs/case.md` (the case brief, moved from root in Task 1) and the repo layout agreed in session (see `docs/architecture.md`).
 
@@ -34,7 +34,7 @@ internal/
 
 ## Open Decisions (not needed for this slice)
 
-- **Queue:** Postgres table + `SELECT … FOR UPDATE SKIP LOCKED` (recommended: no extra service, send + idempotency key commit in one transaction) vs Redis Streams vs NATS JetStream. Decide in the send-queue spec.
+- **Queue design:** the queue is Redis Streams (user decision, D-007). The send-queue spec decides the stream layout, consumer groups, retry and how the idempotency key stays consistent with Postgres.
 - **Frontend dev in compose:** serve built `frontend/` via nginx in compose, or keep `pnpm dev` local only. Decide in 01-frontend-trim.
 
 ## Review Focus
@@ -42,7 +42,7 @@ internal/
 1. Clean clone, no `.env` → `docker compose up` must still start all services. Pinned by Task 4 Step 4.
 2. Postgres down while API is up → `/readyz` must return 503, not 200. Pinned by Task 3 test `TestReadyz_DBDown`.
 3. API starts before Postgres accepts connections → compose must wait on the Postgres healthcheck, and the API must not crash-loop. Pinned by Task 4 `depends_on: condition: service_healthy`.
-4. Host already uses port 5432 (common on dev machines) → compose must not publish Postgres to the host. Pinned by Task 4 Step 4 (`docker compose port postgres 5432` prints nothing).
+4. Host already uses port 5432 or 6379 (common on dev machines) → compose must not publish Postgres or Redis to the host. Pinned by Task 4 Step 5 (`docker inspect` shows no port bindings).
 5. `.env` with a real key gets committed by accident → `.gitignore` must catch `.env` and `.env.local`, and let `.env.example` through. Pinned by Task 1 Step 2.
 
 ---
@@ -250,58 +250,65 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
 ### Task 4: Dockerfile, docker-compose, Makefile, .env.example
 
 **Files:**
-- Create: `backend/Dockerfile`, `docker-compose.yml`, `Makefile`, `.env.example`, `backend/.dockerignore`
+- Create: `Dockerfile` (repo root), `.dockerignore` (repo root), `docker-compose.yml`, `Makefile`, `.env.example`
+- Modify: `DECISIONS.md` (D-002, D-007, D-008)
 
 **Interfaces:**
 - Consumes: binaries and env vars from Task 3.
-- Produces: services `postgres`, `api` (host port 8080), `mock-provider` (host port 8081). Make targets `up`, `down`, `test`, `lint`, `verify`. Later slices add the `seed` service and `frontend`.
+- Produces: services `postgres`, `redis`, `api` (host port 8080), `mock-provider` (host port 8081). Dockerfile target `go-service`. Make targets `up`, `down`, `test`, `lint`, `verify`. Later slices add the `worker` and `seed` services, and slice 01 adds a `frontend` target and service.
 
-- [ ] **Step 1: Write `backend/Dockerfile`.** Multi-stage: `golang:1.27-alpine` builds `./cmd/${CMD}` with `CGO_ENABLED=0`, final stage `gcr.io/distroless/static-debian12:nonroot`. `ARG CMD` is required.
+- [x] **Step 1: Write the root `Dockerfile` and `.dockerignore`.** Build context is the repo root. Stage `go-build`: `golang:1.27-alpine` builds `./cmd/${CMD}` from `backend/` with `CGO_ENABLED=0`. Target `go-service`: `gcr.io/distroless/static-debian12:nonroot`. `ARG CMD` is required. `.dockerignore` excludes everything that no image needs (`.git`, `docs`, `.claude`, `ai-sessions`, `tasks`, `shadcn-vue-admin-main`, `node_modules`, `.env*`).
 
-- [ ] **Step 2: Write `docker-compose.yml`.**
-  - `postgres`: `postgres:17-alpine`, user/db/password `campaign`, named volume, healthcheck `pg_isready -U campaign` (interval 2s, retries 15), **no `ports:`**.
-  - `api`: build `backend` with `CMD: api`, `env_file: [{ path: .env, required: false }]`, `environment` defaults `DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable`, `LLM_MODE: ${LLM_MODE:-mock}`, `ports: ["8080:8080"]`, `depends_on: postgres: condition: service_healthy`.
-  - `mock-provider`: build `backend` with `CMD: mockprovider`, `ports: ["8081:8081"]`.
-  - Distroless has no shell, so there's no container healthcheck for api/mock-provider. `make up` checks them with curl instead (Step 3).
+- [x] **Step 2: Write `docker-compose.yml`.**
+  - `postgres`: `postgres:17-alpine`, user, database and password `campaign`, named volume, healthcheck `pg_isready -h 127.0.0.1 -U campaign -d campaign` (TCP, not the socket that the init server uses) (interval 2s, retries 15), **no `ports:`**.
+  - `redis`: `redis:8-alpine` with `--appendonly yes`, named volume, healthcheck `redis-cli ping` (interval 2s, retries 15), **no `ports:`**.
+  - `api`: build context `.`, target `go-service`, `CMD: api`, `env_file: [{ path: .env, required: false }]`, `environment` defaults `DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable`, `LLM_MODE: ${LLM_MODE:-mock}`, `ports: ["8080:8080"]`, `depends_on: postgres: condition: service_healthy`.
+  - `mock-provider`: build context `.`, target `go-service`, `CMD: mockprovider`, `ports: ["8081:8081"]`.
+  - The distroless image has no shell. Thus the api and mock-provider containers have no healthcheck. `make up` checks them with curl (Step 3).
 
-- [ ] **Step 3: Write `Makefile`.**
+- [x] **Step 3: Write `Makefile`.**
   ```make
-  ifeq ($(shell command -v go),)
-  GO = docker run --rm -v $(CURDIR)/backend:/src -w /src golang:1.27-alpine go
+  ifeq ($(shell command -v go 2>/dev/null),)
+  DOCKER_GO = docker run --rm -v "$(CURDIR)/backend:/src" -w /src golang:1.27-alpine
+  GO = $(DOCKER_GO) go
+  GOFMT = $(DOCKER_GO) gofmt
   else
   GO = cd backend && go
+  GOFMT = cd backend && gofmt
   endif
   ```
   Targets (all `.PHONY`):
   - `up`: `docker compose up --build -d --wait`, then curl `localhost:8080/readyz` and `localhost:8081/healthz` with a retry up to 30s.
   - `down`: `docker compose down`.
   - `test`: `$(GO) test ./...`, then `if [ -d frontend ]; then pnpm -C frontend test:run; fi` (`test` is watch mode and would hang).
-  - `lint`: `$(GO) vet ./...` and fail if `gofmt -l` prints anything.
+  - `lint`: `$(GO) vet ./...`. Fail if `$(GOFMT) -l .` exits non-zero or prints anything.
   - `verify`: `lint test`, then `docker compose config -q`.
   - `lint-docs`: run `.claude/skills/ste-writing/scripts/ste_check.py` on all tracked `.md` files outside `frontend/` and `shadcn-vue-admin-main/`. Warnings only. Not part of `verify`.
 
-- [ ] **Step 4: Write `.env.example`.** Keys: `ANTHROPIC_API_KEY=` (empty), `LLM_MODE=mock`, with a comment per key.
+- [x] **Step 4: Write `.env.example`.** Keys: `ANTHROPIC_API_KEY=` (empty), `LLM_MODE=mock`, with a comment per key.
 
-- [ ] **Step 5: Verify, clean-clone conditions (Review Focus 1, 3, 4).**
+- [x] **Step 4a: Update `DECISIONS.md`.** Change D-002 to "Postgres as the datastore". Add D-007 "Redis Streams as the queue" and D-008 "One root Dockerfile for all app images".
+
+- [x] **Step 5: Verify, clean-clone conditions (Review Focus 1, 3, 4).**
   ```bash
-  test ! -f .env && make up && curl -s localhost:8080/readyz && docker compose port postgres 5432; echo "port_exit=$?"
+  test ! -f .env && make up && curl -s localhost:8080/readyz && docker compose ps redis --format '{{.Health}}' && for s in postgres redis; do docker inspect "$(docker compose ps -q $s)" --format "$s {{json .HostConfig.PortBindings}}"; done
   ```
-  Expected: `{"status":"ok","db":"ok"}`, nothing printed for the postgres port, and a non-zero `port_exit`.
+  Expected: `{"status":"ok","db":"ok"}`, then `healthy`, then `postgres {}` and `redis {}`. (Compose v5 prints `:0` for `docker compose port` on a port that is not published, so the plan does not use that command.)
 
-- [ ] **Step 6: Verify the DB-down path (Review Focus 2).**
+- [x] **Step 6: Verify the DB-down path (Review Focus 2).**
   ```bash
   docker compose stop postgres && curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/readyz; docker compose start postgres
   ```
   Expected: `503`.
 
-- [ ] **Step 7: Verify `make test` without Go (Review Focus, D-004).**
+- [x] **Step 7: Verify `make test` without Go (Review Focus, D-004).**
   `PATH=/usr/bin:/bin:/usr/local/bin make test` (Homebrew Go at `/opt/homebrew/bin` is now hidden). Expected: tests run in the container and pass.
 
-- [ ] **Step 8: Run `make verify` and `make down`.** Expected: exit 0.
+- [x] **Step 8: Run `make verify` and `make down`.** Expected: exit 0.
 
-- [ ] **Step 9: Update tracking and commit.** Set `00-skeleton.passes = true` in `tasks/backlog.json` only after user approval. Append a `progress.md` entry.
+- [x] **Step 9: Update tracking and commit.** Set `00-skeleton.passes = true` in `tasks/backlog.json` only after user approval. Append a `progress.md` entry.
   ```bash
-  git add backend/Dockerfile backend/.dockerignore docker-compose.yml Makefile .env.example tasks
+  git add Dockerfile .dockerignore docker-compose.yml Makefile .env.example DECISIONS.md docs tasks
   git commit -m "chore: docker compose, Makefile, env example"
   ```
 

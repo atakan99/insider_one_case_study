@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: campaign
+      POSTGRES_PASSWORD: campaign
+      POSTGRES_DB: campaign
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Check TCP, not the Unix socket. On first start the init server
+      # listens only on the socket, and the api connects over TCP.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U campaign -d campaign"]
+      interval: 2s
+      retries: 15
+    # No ports: Postgres is reachable only inside the compose network.
+    # This avoids a conflict with a Postgres on the host's port 5432.
+
+  redis:
+    image: redis:8-alpine
+    # The send queue lives here (D-007). AOF keeps queued jobs across restarts.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 15
+    # No ports, for the same reason as Postgres (host port 6379).
+
+  api:
+    build:
+      context: .
+      target: go-service
+      args:
+        CMD: api
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
+      LLM_MODE: ${LLM_MODE:-mock}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Distroless images have no shell, so api and mock-provider have no
+  # container healthcheck. `make up` checks them with curl.
+  mock-provider:
+    build:
+      context: .
+      target: go-service
+      args:
+        CMD: mockprovider
+    ports:
+      - "8081:8081"
+
+volumes:
+  pgdata:
+  redisdata:

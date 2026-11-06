@@ -4,7 +4,8 @@
 
 - **api** — Go HTTP API. Health endpoints, campaigns, segments, content and send status.
 - **mock-provider** — Go service that acts as an SMS and email provider.
-- **postgres** — the only datastore.
+- **postgres** — the datastore (D-002).
+- **redis** — the send queue, with Redis Streams (D-007).
 - **frontend** — Vue app for the campaign flow.
 
 ## Folder tree
