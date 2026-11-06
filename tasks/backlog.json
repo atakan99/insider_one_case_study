@@ -34,7 +34,7 @@
       "NFR-9: src/types/*.d.ts are generated again and refer to no removed file",
       "NFR-10: .env.example has only the three VITE_SERVER_API values"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "02-seed-users",
