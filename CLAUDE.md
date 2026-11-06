@@ -33,4 +33,4 @@
 
 ## Writing style
 
-TBD. Task 2 Step 9 of `docs/plans/00-skeleton.md` replaces this line.
+Use the `ste-writing` skill for specs, plans, docs, reports and commit messages. Do not apply it to anything in `backend/` or `frontend/`: code, comments, UI text, API errors, LLM prompts and generated copy.

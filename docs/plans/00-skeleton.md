@@ -130,7 +130,7 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
 - Consumes: `CLAUDE.md`, `docs/plans/*.md`, `tasks/backlog.json` from Task 1.
 - Produces: skill `ste-writing`. Subagents `executor` and `reviewer`, used by the main (planner) session from slice 01 on. `ste_check.py <file.md>...` prints `file:line: rule: text` per finding and always exits 0.
 
-- [ ] **Step 1: Write `SKILL.md` (≤ 80 lines).**
+- [x] **Step 1: Write `SKILL.md` (≤ 80 lines).**
   - Frontmatter `name: ste-writing`. `description:` "Use when writing specs, plans, progress notes, DECISIONS.md, README, CLAUDE.md, agent prompts, subagent reports or commit messages. Applies ASD-STE100 rules. Never use it for app code, comments, UI text, API errors or the app's LLM prompts."
   - **Scope, in (communication between the user and agents):** specs, plans, `tasks/progress.md`, `CLAUDE.md`, agent files, subagent reports, replies to the user, commit messages, `DECISIONS.md`, `README.md`.
   - **Scope, out (state this explicitly):** the app itself. That includes code, code comments, identifiers, UI text, API error messages, the app's LLM prompts, and the SMS and email copy that the app generates.
@@ -139,22 +139,22 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
   - Three before/after pairs taken from this repo's own docs.
   - Pointer: "Run `scripts/ste_check.py` on changed `.md` files before you report."
 
-- [ ] **Step 2: Write `terms.md`.** A table `term | meaning | do not use for`. Seed terms: brief, segment rule, audience, channel, consent, template (message text with `{{vars}}`), rendered message, campaign, approval, send job, attempt, delivery status, idempotency key. One meaning per term. Later slices add rows.
+- [x] **Step 2: Write `terms.md`.** A table `term | meaning | do not use for`. Seed terms: brief, segment rule, audience, channel, consent, template (message text with `{{vars}}`), rendered message, campaign, approval, send job, attempt, delivery status, idempotency key. One meaning per term. Later slices add rows.
 
-- [ ] **Step 3: Write failing tests** in `test_ste_check.py` (stdlib `unittest`):
+- [x] **Step 3: Write failing tests** in `test_ste_check.py` (stdlib `unittest`):
   - `test_semicolon`: `"Do X; do Y."` → one finding, rule `semicolon`.
   - `test_long_sentence`: a 26-word sentence → rule `sentence-length`. A 20-word sentence → no finding.
   - `test_present_perfect`: `"The job has been sent."` → rule `present-perfect`.
   - `test_skips_code`: a semicolon inside a fenced code block or inline backticks → no finding.
   - `test_skips_tables_and_headings`: lines that start with `|` or `#` → no sentence-length finding.
 
-- [ ] **Step 4: Run, expect FAIL.** `python3 -m unittest discover -s .claude/skills/ste-writing/scripts` → import failure.
+- [x] **Step 4: Run, expect FAIL.** `python3 -m unittest discover -s .claude/skills/ste-writing/scripts` → import failure.
 
-- [ ] **Step 5: Implement `ste_check.py`.** Stdlib only. Strip fenced blocks and inline code first. Split sentences on `. ! ?` followed by a space or end of line. Use the 25-word limit. The checker cannot tell an instruction from a description, so the 20-word limit stays a review item. Detect present perfect with `\b(has|have|had) been\b` and `\b(has|have) [a-z]+ed\b`.
+- [x] **Step 5: Implement `ste_check.py`.** Stdlib only. Strip fenced blocks and inline code first. Split sentences on `. ! ?` followed by a space or end of line. Use the 25-word limit. The checker cannot tell an instruction from a description, so the 20-word limit stays a review item. Detect present perfect with `\b(has|have|had) been\b` and `\b(has|have) [a-z]+ed\b`.
 
-- [ ] **Step 6: Run, expect PASS.** Same command as Step 4.
+- [x] **Step 6: Run, expect PASS.** Same command as Step 4.
 
-- [ ] **Step 7: Write `executor.md`.**
+- [x] **Step 7: Write `executor.md`.**
   ```yaml
   name: executor
   description: Implements ONE task from an approved plan in docs/plans/. Give it the plan path and task number.
@@ -167,7 +167,7 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
   ```
   Body rules (written in STE): read `CLAUDE.md`, the plan, and the plan's spec. Do only the given task. Write tests first. Run `make verify` before you report. Do not commit. The user commits. Report: files changed, the tail of `make verify` output, each deviation from the plan and its reason.
 
-- [ ] **Step 8: Write `reviewer.md`.**
+- [x] **Step 8: Write `reviewer.md`.**
   ```yaml
   name: reviewer
   description: Read-only review of a finished task or slice against its spec, plan and CLAUDE.md hard rules.
@@ -179,12 +179,12 @@ git commit -m "chore: repo layout, docs stubs, task tracking"
   ```
   Body rules: check the diff (`git diff` / `git diff --staged`) against the task's tests, the plan's Review Focus, and the `CLAUDE.md` hard rules. Report each defect as `file:line — problem — failing input`. Report STE findings only for changed docs, in a short separate section after the defects. Do not edit files. Record recurring defect patterns in memory.
 
-- [ ] **Step 9: Update `CLAUDE.md`.** Replace the Writing style line with: "Use the `ste-writing` skill for specs, plans, docs, reports and commit messages. Do not apply it to anything in `backend/` or `frontend/`: code, comments, UI text, API errors, LLM prompts and generated copy."
+- [x] **Step 9: Update `CLAUDE.md`.** Replace the Writing style line with: "Use the `ste-writing` skill for specs, plans, docs, reports and commit messages. Do not apply it to anything in `backend/` or `frontend/`: code, comments, UI text, API errors, LLM prompts and generated copy."
 
-- [ ] **Step 10: Verify.** In Claude Code run `/agents`, then `/skills`.
-  Expected: `executor` (sonnet) and `reviewer` (opus) appear under project agents. `ste-writing` appears under project skills.
+- [x] **Step 10: Verify.** Verify that the session lists `executor`, `reviewer` and `ste-writing`. Claude Code no longer has the `/agents` command.
+  Expected: `executor` (sonnet) and `reviewer` (opus) appear as project agent types. `ste-writing` appears as a project skill.
 
-- [ ] **Step 11: Commit.**
+- [x] **Step 11: Commit.**
   ```bash
   git add .claude docs CLAUDE.md
   git commit -m "chore: add ste-writing skill, executor and reviewer subagents"

@@ -1,0 +1,1 @@
+- [ste_check edge cases](ste-check-edge-cases.md) — inputs that broke ste_check.py in the 00 Task 2 review; re-test them after checker changes
