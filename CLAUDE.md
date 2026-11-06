@@ -4,7 +4,7 @@
 
 - `backend/` — Go module. One binary per process in `cmd/`, shared packages in `internal/`.
 - `frontend/` — Vue app. Slice `01-frontend-trim` creates it from `shadcn-vue-admin-main/`.
-- `docs/` — case brief (`case.md`), specs (`specs/NN-name/`), plans (`plans/NN-name.md`), `architecture.md`.
+- `docs/` — case brief (`case.md`), specs (`specs/NN-name/`), plans (`plans/NN-name.md`), `architecture.md`, Claude's decisions log (`decisions-log.md`).
 - `tasks/` — `backlog.json` (slices and acceptance checks) and `progress.md` (session log).
 - `ai-sessions/` — Claude session exports. Remove API keys and personal data before you commit them.
 
@@ -29,7 +29,7 @@
 - Never send on a channel without that user's consent for that channel.
 - SMS must be 160 characters or fewer. Email subject must be 80 characters or fewer. Check the limits after you render `{{first_name}}`-style variables.
 - Tests use the mock LLM. No test reads `ANTHROPIC_API_KEY`.
-- Write a `DECISIONS.md` entry for each non-obvious choice.
+- Write an entry in `docs/decisions-log.md` for each non-obvious choice. Do not edit `DECISIONS.md`. The user owns it.
 
 ## Writing style
 

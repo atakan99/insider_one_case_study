@@ -16,6 +16,6 @@ Copy `.env.example` to `.env` to set the API URL.
 
 ## Origin
 
-This app started from [shadcn-vue-admin](https://github.com/Whbbit1999/shadcn-vue-admin) (MIT, see `LICENSE`). We removed the demo pages, the mock login, the UI languages, the marketing site and the theme editor. D-009 in the root `DECISIONS.md` gives the reasons.
+This app started from [shadcn-vue-admin](https://github.com/Whbbit1999/shadcn-vue-admin) (MIT, see `LICENSE`). We removed the demo pages, the mock login, the UI languages, the marketing site and the theme editor. D-009 in `docs/decisions-log.md` gives the reasons.
 
 To add a removed shadcn-vue component again, run `pnpm dlx shadcn-vue@latest add <name>`.
