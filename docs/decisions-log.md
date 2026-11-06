@@ -71,3 +71,10 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** nginx with the built `dist/`, `pnpm dev` in a container, `pnpm dev` only on the host.
 - **Choice:** Compose builds the `frontend` target and serves it with nginx on port 3000. Local work uses `pnpm dev` on port 5173.
 - **Why:** A static build is small and starts fast. nginx sends each unknown path to `index.html`, so deep links work after a reload.
+
+## D-011 Export sessions with a script from the JSONL transcripts
+
+- **Context:** The case asks for an export of each Claude session in `ai-sessions/`. API keys and personal data must not be in the exports.
+- **Options:** Run `/export` by hand in each session, copy the raw JSONL files, convert the JSONL files to Markdown with a script.
+- **Choice:** `ai-sessions/export_sessions.py` converts each session to one Markdown file and adds the subagent runs. It writes an index to `ai-sessions/README.md`.
+- **Why:** The script covers all sessions and the subagent runs in one step. It removes hidden system context and redacts the email, the home path, account IDs and secrets. You can run it again at the end of the case.
