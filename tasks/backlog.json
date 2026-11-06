@@ -8,7 +8,7 @@
       "make verify passes",
       "Every later slice has a fixed place for its spec, plan, decisions and progress"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "01-frontend-trim",
