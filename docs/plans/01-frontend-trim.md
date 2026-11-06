@@ -57,11 +57,11 @@ All `src/` paths in this task are under `frontend/`.
 - Produces: `navData: NavGroup[]` with one group and two links. `pageCommands: SidebarLink[]`, the flat list that `command-to-page.vue` shows.
 - Produces: `SidebarData` without `user` and `teams`.
 
-- [ ] **Step 1: Copy.** `rsync -a --exclude node_modules --exclude dist shadcn-vue-admin-main/ frontend/`. Do not run `pnpm install` yet.
+- [x] **Step 1: Copy.** `rsync -a --exclude node_modules --exclude dist shadcn-vue-admin-main/ frontend/`. Do not run `pnpm install` yet.
 
-- [ ] **Step 2: Fix `package.json`, `pnpm-workspace.yaml` and `.env.example`.** Apply NFR-6 and NFR-10. Remove `simple-git-hooks: true` from `allowBuilds`. Remove the `simple-git-hooks` and `nano-staged` dev dependencies.
+- [x] **Step 2: Fix `package.json`, `pnpm-workspace.yaml` and `.env.example`.** Apply NFR-6 and NFR-10. Remove `simple-git-hooks: true` from `allowBuilds`. Remove the `simple-git-hooks` and `nano-staged` dev dependencies.
 
-- [ ] **Step 3: Write the failing tests.** Mount with `@vue/test-utils` and a router made from `setupLayouts(routes)` (`vue-router/auto-routes`, `virtual:generated-layouts`) and `createMemoryHistory()`.
+- [x] **Step 3: Write the failing tests.** Mount with `@vue/test-utils` and a router made from `setupLayouts(routes)` (`vue-router/auto-routes`, `virtual:generated-layouts`) and `createMemoryHistory()`.
 
   `routes.test.ts`:
   - `redirects / to /campaigns/new`: `await router.push('/')` → `router.currentRoute.value.path === '/campaigns/new'` (FR-2).
@@ -78,22 +78,22 @@ All `src/` paths in this task are under `frontend/`.
 
   `error-pages.test.ts`: keep the `it.each` for `404` and `500` only. Keep the fallback cases.
 
-- [ ] **Step 4: Install, run, expect FAIL.**
+- [x] **Step 4: Install, run, expect FAIL.**
   ```bash
   cd frontend && pnpm install && pnpm test:run; ls ../.git/hooks | grep -v '\.sample$'; echo "hooks_exit=$?"
   ```
   Expected: the three new test files fail (no `/campaigns/*` routes, `pageCommands` undefined, team switcher text). `hooks_exit=1` (no hook files).
 
-- [ ] **Step 5: Delete the removed files.** Each row of "What we remove" in `goal.md`. In `pages/errors/`, keep `[code].vue`, `index.vue` and the data file. Keep only `404` and `500` in `ERROR_PAGE_MAP`.
+- [x] **Step 5: Delete the removed files.** Each row of "What we remove" in `goal.md`. In `pages/errors/`, keep `[code].vue`, `index.vue` and the data file. Keep only `404` and `500` in `ERROR_PAGE_MAP`.
 
-- [ ] **Step 6: Edit the files that refer to removed code.** The list is in "Files" above. Rules:
+- [x] **Step 6: Edit the files that refer to removed code.** The list is in "Files" above. Rules:
   - `default.vue`: header has `SidebarTrigger`, `CommandMenuPanel` and `ToggleTheme` only (FR-6). Keep the `contentLayout` class.
   - `app-sidebar/index.vue`: the header shows a static "Campaign Composer" with one `@lucide/vue` icon. Delete `team-switcher.vue`, `nav-team-add.vue` and the footer user menu. Keep `nav-team*.vue` and `sidebar-config.ts`.
   - `navData`: one group "Campaigns" with "New campaign" (`/campaigns/new`) and "Campaigns" (`/campaigns`). Delete `settingsNavItems` and `otherPages`.
   - `api-client.ts`: remove `handleUnauthorized` and `onResponseError`. Keep `apiFetch` with `baseURL` and `timeout`.
   - `pages/index.vue`: redirect to `/campaigns/new`.
 
-- [ ] **Step 7: Add the placeholder pages.** Each page shows an `h1` and one line of text, inside the default layout:
+- [x] **Step 7: Add the placeholder pages.** Each page shows an `h1` and one line of text, inside the default layout:
 
   | File | `h1` | Line |
   |---|---|---|
@@ -101,9 +101,9 @@ All `src/` paths in this task are under `frontend/`.
   | `campaigns/index.vue` | Campaigns | The list of campaigns and their status comes in a later slice. |
   | `campaigns/[id].vue` | Campaign {{ id }} | The live send dashboard comes in a later slice. |
 
-- [ ] **Step 8: Run, expect PASS.** `cd frontend && pnpm test:run && pnpm build && pnpm lint`. Expected: all pass, exit 0.
+- [x] **Step 8: Run, expect PASS.** `cd frontend && pnpm test:run && pnpm build && pnpm lint`. Expected: all pass, exit 0.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
   ```bash
   git add frontend
   git commit -m "feat(frontend): trim template into frontend/, add campaign placeholder pages"

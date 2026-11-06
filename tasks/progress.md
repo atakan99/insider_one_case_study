@@ -33,3 +33,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: Step 5 from empty volumes (`{"status":"ok","db":"ok"}`, redis `healthy`, `postgres {}`, `redis {}`). Step 6 (`503`). Step 7 without Go (tests pass in the container). `make verify` exit 0, `make down` exit 0. `make lint` exits 2 on a gofmt parse error. A build without `CMD` fails with a clear message.
 - Next: user review of slice 00. The user sets `00-skeleton.passes`. Then slice 01-frontend-trim.
 - Open questions: `.gitignore` does not include `__pycache__/` (from Task 2). The api does not read a `REDIS_URL` yet. The send-queue slice adds it.
+
+## 2026-11-06 — 01-frontend-trim
+- Done: Task 1 of `docs/plans/01-frontend-trim.md`. Copied the template to `frontend/` and removed the rows of the "What we remove" table. Fixed `package.json`, `pnpm-workspace.yaml` and `.env.example` before the first install. Added the three campaign placeholder pages and the `/` redirect. New tests cover the routes, the sidebar and the page search. The reviewer found 4 defects. All are fixed: stale globals in the generated `auto-import.d.ts`, a 401 that showed no toast, and two weak sidebar assertions.
+- Verified with: `pnpm test:run` (55 tests), `pnpm build`, `CI=true pnpm lint`. The sidebar test fails on three code changes made on purpose. `.git/hooks` has no hook files after `pnpm install`.
+- Next: Task 2 (unused UI components, packages and files). The template `frontend/README.md` must be replaced, because it names removed code (NFR-5).
+- Open questions: `__pycache__/` in `.gitignore` (from slice 00).
