@@ -4,7 +4,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
+	"time"
 )
 
 // LLM modes.
@@ -100,6 +102,109 @@ func LoadSeed(getenv func(string) string) (SeedConfig, error) {
 	}
 	if len(errs) > 0 {
 		return SeedConfig{}, errors.Join(errs...)
+	}
+	return cfg, nil
+}
+
+// MockProviderConfig holds the settings that the mock provider reads at startup.
+type MockProviderConfig struct {
+	HTTPAddr   string
+	RatePerSec float64
+	Burst      int
+	ErrorRate  float64
+	SlowRate   float64
+	LostRate   float64
+	SlowDelay  time.Duration
+	LatencyMax time.Duration
+	// Random is the seed for the failure picker. It comes from MOCK_RANDOM,
+	// or from the clock if MOCK_RANDOM is not set.
+	Random uint64
+}
+
+// LoadMockProvider reads the mock provider config through getenv.
+func LoadMockProvider(getenv func(string) string) (MockProviderConfig, error) {
+	cfg := MockProviderConfig{
+		HTTPAddr:   getenv("HTTP_ADDR"),
+		RatePerSec: 100,
+		Burst:      10,
+		ErrorRate:  0.03,
+		SlowRate:   0.03,
+		LostRate:   0.01,
+		SlowDelay:  5 * time.Second,
+		LatencyMax: 50 * time.Millisecond,
+		Random:     uint64(time.Now().UnixNano()),
+	}
+	if cfg.HTTPAddr == "" {
+		cfg.HTTPAddr = ":8081"
+	}
+
+	var errs []error
+	if v := getenv("MOCK_RATE_PER_SEC"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f <= 0 {
+			errs = append(errs, fmt.Errorf("MOCK_RATE_PER_SEC must be a number greater than 0, got %q", v))
+		} else {
+			cfg.RatePerSec = f
+		}
+	}
+	if v := getenv("MOCK_RATE_BURST"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("MOCK_RATE_BURST must be an integer of at least 1, got %q", v))
+		} else {
+			cfg.Burst = n
+		}
+	}
+	for _, r := range []struct {
+		key string
+		dst *float64
+	}{
+		{"MOCK_ERROR_RATE", &cfg.ErrorRate},
+		{"MOCK_SLOW_RATE", &cfg.SlowRate},
+		{"MOCK_LOST_RATE", &cfg.LostRate},
+	} {
+		v := getenv(r.key)
+		if v == "" {
+			continue
+		}
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(f) || f < 0 || f > 1 {
+			errs = append(errs, fmt.Errorf("%s must be a number from 0 to 1, got %q", r.key, v))
+			continue
+		}
+		*r.dst = f
+	}
+	if sum := cfg.ErrorRate + cfg.SlowRate + cfg.LostRate; sum > 1 {
+		errs = append(errs, fmt.Errorf("the sum of MOCK_ERROR_RATE, MOCK_SLOW_RATE and MOCK_LOST_RATE must be 1 or less, got %g", sum))
+	}
+	for _, d := range []struct {
+		key string
+		dst *time.Duration
+	}{
+		{"MOCK_SLOW_DELAY", &cfg.SlowDelay},
+		{"MOCK_LATENCY_MAX", &cfg.LatencyMax},
+	} {
+		v := getenv(d.key)
+		if v == "" {
+			continue
+		}
+		dur, err := time.ParseDuration(v)
+		if err != nil || dur < 0 {
+			errs = append(errs, fmt.Errorf("%s must be a duration of 0 or more, for example 5s, got %q", d.key, v))
+			continue
+		}
+		*d.dst = dur
+	}
+	if v := getenv("MOCK_RANDOM"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("MOCK_RANDOM must be an unsigned integer, got %q", v))
+		} else {
+			cfg.Random = n
+		}
+	}
+	if len(errs) > 0 {
+		return MockProviderConfig{}, errors.Join(errs...)
 	}
 	return cfg, nil
 }

@@ -120,3 +120,31 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** A shared Postgres from compose, a temporary container for each `make test`.
 - **Choice:** `make test` starts a temporary `postgres:17-alpine` container named `cc-test-pg` on the network `cc-test`. It publishes the port on `127.0.0.1:55432`. Go in a container joins `cc-test` through `GO_TEST`. Local Go uses the port. `DOCKER_GO` stays without the network, so lint works. Each test creates its own database with `storetest.NewDB`.
 - **Why:** Tests never touch the dev data. Parallel packages do not collide. Port 55432 avoids a Postgres on the host port 5432.
+
+## D-018 The mock provider does no dedup
+
+- **Context:** The case says that the same message must not go to the same person twice. Twilio Messaging and SendGrid Mail Send have no `Idempotency-Key` on their send endpoints. A repeat request sends the message again.
+- **Options:** The provider honors an `Idempotency-Key` and absorbs repeats. The provider delivers each repeat and the worker prevents duplicates.
+- **Choice:** The provider delivers each repeat (user decision). It stores an optional `reference`, as SendGrid `custom_args` does. `GET /v1/stats` counts `duplicate_deliveries` for the audit.
+- **Why:** The mock acts like the real providers. Thus the dedup logic is in our worker, where the case wants to see it. Provider dedup would hide a worker bug.
+
+## D-019 Only a timeout or a dropped connection is ambiguous, and the worker does not retry it
+
+- **Context:** With no provider dedup, a retry after an ambiguous failure can send a second copy.
+- **Options:** Retry all failures. Check the provider before a retry. Do not retry ambiguous failures.
+- **Choice:** In the mock, `500` and `503` mean "not delivered". `slow` and `lost` deliver the message, but the client gets a timeout or a dropped connection. The worker in slice 07 retries `429`, `5xx` and connection refused. It marks a timeout or a dropped connection `unknown` and does not retry (user decision).
+- **Why:** The case forbids duplicates, so a possible missed message is better than a possible duplicate. SendGrid has no reliable lookup that the worker can use before a retry. Clear rules in the mock make each path testable.
+
+## D-020 Token bucket from `golang.org/x/time/rate`
+
+- **Context:** The mock provider needs a rate limit for each channel. The worker in slice 07 needs one too.
+- **Options:** Our own token bucket, `golang.org/x/time/rate`, a Redis-based limiter.
+- **Choice:** `golang.org/x/time/rate`, one limiter for each channel. The default is 100 per second with a burst of 10.
+- **Why:** The package is maintained by the Go team and takes an explicit time, so tests can use a fake clock. The mock is one process, so it needs no shared state in Redis.
+
+## D-021 `X-Mock-Fail` header for exact tests
+
+- **Context:** The random failures make the worker tests flaky. The tests must reach each path exactly.
+- **Options:** A fixed random seed only, a control endpoint that sets the next failure, a header on each request.
+- **Choice:** The `X-Mock-Fail` header sets the mode for one request. The random rates and `MOCK_RANDOM` stay for the demo.
+- **Why:** A header affects one request only. Thus parallel tests do not interfere. A control endpoint keeps state that a parallel test can change.

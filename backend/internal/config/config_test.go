@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func env(m map[string]string) func(string) string {
@@ -96,6 +97,80 @@ func TestLoadSeed_Errors(t *testing.T) {
 			_, err := LoadSeed(env(tc.env))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want error that mentions %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadMockProvider_Defaults(t *testing.T) {
+	cfg, err := LoadMockProvider(env(map[string]string{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.HTTPAddr != ":8081" {
+		t.Errorf("HTTPAddr = %q, want :8081", cfg.HTTPAddr)
+	}
+	if cfg.RatePerSec != 100 || cfg.Burst != 10 {
+		t.Errorf("rate = %v/%d, want 100/10", cfg.RatePerSec, cfg.Burst)
+	}
+	if cfg.ErrorRate != 0.03 || cfg.SlowRate != 0.03 || cfg.LostRate != 0.01 {
+		t.Errorf("rates = %v %v %v, want 0.03 0.03 0.01", cfg.ErrorRate, cfg.SlowRate, cfg.LostRate)
+	}
+	if cfg.SlowDelay != 5*time.Second || cfg.LatencyMax != 50*time.Millisecond {
+		t.Errorf("durations = %v %v, want 5s 50ms", cfg.SlowDelay, cfg.LatencyMax)
+	}
+}
+
+func TestLoadMockProvider_Values(t *testing.T) {
+	cfg, err := LoadMockProvider(env(map[string]string{
+		"HTTP_ADDR":         ":9000",
+		"MOCK_RATE_PER_SEC": "20.5",
+		"MOCK_RATE_BURST":   "3",
+		"MOCK_ERROR_RATE":   "0.1",
+		"MOCK_SLOW_RATE":    "0.2",
+		"MOCK_LOST_RATE":    "0.3",
+		"MOCK_SLOW_DELAY":   "2s",
+		"MOCK_LATENCY_MAX":  "0",
+		"MOCK_RANDOM":       "7",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := MockProviderConfig{
+		HTTPAddr: ":9000", RatePerSec: 20.5, Burst: 3,
+		ErrorRate: 0.1, SlowRate: 0.2, LostRate: 0.3,
+		SlowDelay: 2 * time.Second, LatencyMax: 0, Random: 7,
+	}
+	if cfg != want {
+		t.Errorf("cfg = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestLoadMockProvider_Errors(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"error rate over 1", map[string]string{"MOCK_ERROR_RATE": "1.5"}, "MOCK_ERROR_RATE"},
+		{"slow rate negative", map[string]string{"MOCK_SLOW_RATE": "-0.1"}, "MOCK_SLOW_RATE"},
+		{"lost rate not a number", map[string]string{"MOCK_LOST_RATE": "abc"}, "MOCK_LOST_RATE"},
+		{"sum over 1", map[string]string{"MOCK_ERROR_RATE": "0.5", "MOCK_SLOW_RATE": "0.4", "MOCK_LOST_RATE": "0.2"}, "sum"},
+		{"slow delay without unit", map[string]string{"MOCK_SLOW_DELAY": "5"}, "MOCK_SLOW_DELAY"},
+		{"latency negative", map[string]string{"MOCK_LATENCY_MAX": "-1s"}, "MOCK_LATENCY_MAX"},
+		{"rate zero", map[string]string{"MOCK_RATE_PER_SEC": "0"}, "MOCK_RATE_PER_SEC"},
+		{"burst zero", map[string]string{"MOCK_RATE_BURST": "0"}, "MOCK_RATE_BURST"},
+		{"random negative", map[string]string{"MOCK_RANDOM": "-3"}, "MOCK_RANDOM"},
+		{"error rate NaN", map[string]string{"MOCK_ERROR_RATE": "NaN"}, "MOCK_ERROR_RATE"},
+		{"slow rate Inf", map[string]string{"MOCK_SLOW_RATE": "Inf"}, "MOCK_SLOW_RATE"},
+		{"rate per sec Inf", map[string]string{"MOCK_RATE_PER_SEC": "+Inf"}, "MOCK_RATE_PER_SEC"},
+		{"rate per sec NaN", map[string]string{"MOCK_RATE_PER_SEC": "NaN"}, "MOCK_RATE_PER_SEC"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadMockProvider(env(tc.env))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want error that mentions %q", err, tc.want)
 			}
 		})
 	}

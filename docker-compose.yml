@@ -76,6 +76,19 @@ services:
       target: go-service
       args:
         CMD: mockprovider
+    # Failure injection and rate limit (docs/specs/03-mock-provider/goal.md).
+    # Set the three rates to 0 to turn the random failures off. Compose reads
+    # the values from .env. No env_file: the provider must not get the API key.
+    environment:
+      MOCK_RATE_PER_SEC: ${MOCK_RATE_PER_SEC:-100}
+      MOCK_RATE_BURST: ${MOCK_RATE_BURST:-10}
+      MOCK_ERROR_RATE: ${MOCK_ERROR_RATE:-0.03}
+      MOCK_SLOW_RATE: ${MOCK_SLOW_RATE:-0.03}
+      MOCK_LOST_RATE: ${MOCK_LOST_RATE:-0.01}
+      MOCK_SLOW_DELAY: ${MOCK_SLOW_DELAY:-5s}
+      MOCK_LATENCY_MAX: ${MOCK_LATENCY_MAX:-50ms}
+      # Empty means a seed from the clock.
+      MOCK_RANDOM: ${MOCK_RANDOM:-}
     ports:
       - "8081:8081"
 

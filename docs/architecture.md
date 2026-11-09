@@ -3,7 +3,7 @@
 ## Components
 
 - **api** — Go HTTP API. Health endpoints, campaigns, segments, content and send status.
-- **mock-provider** — Go service that acts as an SMS and email provider.
+- **mock-provider** — Go service that acts as an SMS and email provider, like Twilio or SendGrid. It sometimes returns `429`, `5xx`, slow responses and lost responses. It does no dedup (D-018).
 - **seed** — Go one-shot job. It applies the migrations, loads the seed users, then exits (D-015). The api starts after it completes.
 - **postgres** — the datastore (D-002).
 - **redis** — the send queue, with Redis Streams (D-007).
@@ -25,6 +25,7 @@ backend/
     llm/            interface, Claude client, fake
     content/        channel limits, {{var}} rendering
     delivery/       queue, rate limiter, retry, idempotency
+    mockprovider/   mock provider handlers, rate limit, failure modes, message store
     store/          database access, goose runner
       migrations/   embedded SQL migrations
     seed/           seed user generator and loader
@@ -49,6 +50,6 @@ ai-sessions/
 3. **Approval** — The marketer previews, edits and approves the content.
    - TBD per slice.
 4. **Send** — A queue sends the messages to the mock provider.
-   - TBD per slice.
+   - The mock provider delivers each request, also a repeat. The worker owns the dedup. It does not retry after a timeout or a dropped connection (D-018, D-019).
 5. **Live status** — The dashboard shows the delivery status.
    - TBD per slice.
