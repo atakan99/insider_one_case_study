@@ -94,7 +94,7 @@
       "NFR-6. cmd/mockprovider imports nothing from internal/ except config and mockprovider. internal/mockprovider imports nothing from internal/.",
       "NFR-7. make verify passes."
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "04-segment-rules",
