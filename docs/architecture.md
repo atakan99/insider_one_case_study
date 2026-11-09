@@ -4,6 +4,7 @@
 
 - **api** — Go HTTP API. Health endpoints, campaigns, segments, content and send status.
 - **mock-provider** — Go service that acts as an SMS and email provider.
+- **seed** — Go one-shot job. It applies the migrations, loads the seed users, then exits (D-015). The api starts after it completes.
 - **postgres** — the datastore (D-002).
 - **redis** — the send queue, with Redis Streams (D-007).
 - **frontend** — Vue app for the campaign flow. Compose serves the built app with nginx on port 3000 (D-010).
@@ -24,7 +25,9 @@ backend/
     llm/            interface, Claude client, fake
     content/        channel limits, {{var}} rendering
     delivery/       queue, rate limiter, retry, idempotency
-    store/          sqlc-generated queries and migrations
+    store/          database access, goose runner
+      migrations/   embedded SQL migrations
+    seed/           seed user generator and loader
 frontend/
 docs/
   case.md

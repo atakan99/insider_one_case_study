@@ -4,9 +4,14 @@ ifeq ($(shell command -v go 2>/dev/null),)
 DOCKER_GO = docker run --rm -v "$(CURDIR)/backend:/src" -w /src golang:1.27-alpine
 GO = $(DOCKER_GO) go
 GOFMT = $(DOCKER_GO) gofmt
+# Tests join the cc-test network to reach the test Postgres by name.
+GO_TEST = docker run --rm --network cc-test -e TEST_DATABASE_URL -v "$(CURDIR)/backend:/src" -w /src golang:1.27-alpine go
+TEST_DATABASE_URL = postgres://test:test@cc-test-pg:5432/test?sslmode=disable
 else
 GO = cd backend && go
 GOFMT = cd backend && gofmt
+GO_TEST = cd backend && go
+TEST_DATABASE_URL = postgres://test:test@127.0.0.1:55432/test?sslmode=disable
 endif
 
 # Same for pnpm. The anonymous /app/node_modules volume keeps Linux packages
@@ -35,8 +40,19 @@ up:
 down:
 	docker compose down
 
+# Starts a temporary Postgres, runs the Go tests and removes the container.
+# The exit code is the exit code of the Go tests.
 test:
-	$(GO) test ./...
+	@docker network inspect cc-test >/dev/null 2>&1 || docker network create cc-test >/dev/null
+	@docker rm -f cc-test-pg >/dev/null 2>&1 || true
+	docker run -d --name cc-test-pg --network cc-test \
+		-e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
+		-p 127.0.0.1:55432:5432 postgres:17-alpine >/dev/null
+	@i=0; until docker exec cc-test-pg pg_isready -U test -d test -h 127.0.0.1 >/dev/null 2>&1; do \
+		i=$$((i+1)); if [ $$i -gt 60 ]; then echo "test Postgres not ready"; docker rm -f cc-test-pg >/dev/null; exit 1; fi; \
+		sleep 1; done
+	@export TEST_DATABASE_URL='$(TEST_DATABASE_URL)'; $(GO_TEST) test ./...; rc=$$?; \
+		docker rm -f cc-test-pg >/dev/null 2>&1; exit $$rc
 	$(PNPM) test:run
 
 lint:

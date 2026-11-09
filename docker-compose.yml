@@ -45,6 +45,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # The api starts after the seed applies the migrations (D-015).
+      seed:
+        condition: service_completed_successfully
+
+  # One-shot job. It applies the migrations, loads the users, then exits.
+  # If users exist, it keeps them and exits 0. With SEED_RESET=true it
+  # deletes all users and loads them again on each start.
+  seed:
+    build:
+      context: .
+      target: go-service
+      args:
+        CMD: seed
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # Distroless images have no shell, so api and mock-provider have no
   # container healthcheck. `make up` checks them with curl.

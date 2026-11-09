@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // LLM modes.
@@ -51,6 +52,54 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
+	}
+	return cfg, nil
+}
+
+// SeedConfig holds the settings that the seed process reads at startup.
+type SeedConfig struct {
+	DatabaseURL string
+	Users       int
+	Random      uint64
+	Reset       bool
+}
+
+// LoadSeed reads the seed config through getenv.
+func LoadSeed(getenv func(string) string) (SeedConfig, error) {
+	cfg := SeedConfig{DatabaseURL: getenv("DATABASE_URL"), Users: 5000, Random: 42}
+	var errs []error
+	if cfg.DatabaseURL == "" {
+		errs = append(errs, errors.New("DATABASE_URL is required"))
+	}
+	if v := getenv("SEED_USERS"); v != "" {
+		n, err := strconv.Atoi(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("SEED_USERS must be an integer, got %q", v))
+		case n < 1:
+			errs = append(errs, fmt.Errorf("SEED_USERS must be at least 1, got %d", n))
+		default:
+			cfg.Users = n
+		}
+	}
+	if v := getenv("SEED_RANDOM"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("SEED_RANDOM must be an unsigned integer, got %q", v))
+		} else {
+			cfg.Random = n
+		}
+	}
+	if v := getenv("SEED_RESET"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("SEED_RESET must be a boolean, got %q", v))
+		} else {
+			cfg.Reset = b
+		}
+	}
+	if len(errs) > 0 {
+		return SeedConfig{}, errors.Join(errs...)
 	}
 	return cfg, nil
 }

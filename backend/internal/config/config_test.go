@@ -51,3 +51,52 @@ func TestLoad_InvalidLLMMode(t *testing.T) {
 		t.Fatalf("err = %v, want error that mentions LLM_MODE", err)
 	}
 }
+
+func TestLoadSeed_Defaults(t *testing.T) {
+	cfg, err := LoadSeed(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := SeedConfig{DatabaseURL: "postgres://x", Users: 5000, Random: 42, Reset: false}
+	if cfg != want {
+		t.Errorf("cfg = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestLoadSeed_Values(t *testing.T) {
+	cfg, err := LoadSeed(env(map[string]string{
+		"DATABASE_URL": "postgres://x",
+		"SEED_USERS":   "12",
+		"SEED_RANDOM":  "7",
+		"SEED_RESET":   "true",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := SeedConfig{DatabaseURL: "postgres://x", Users: 12, Random: 7, Reset: true}
+	if cfg != want {
+		t.Errorf("cfg = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestLoadSeed_Errors(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"missing url", map[string]string{}, "DATABASE_URL"},
+		{"users not a number", map[string]string{"DATABASE_URL": "x", "SEED_USERS": "abc"}, "SEED_USERS"},
+		{"users zero", map[string]string{"DATABASE_URL": "x", "SEED_USERS": "0"}, "SEED_USERS"},
+		{"random negative", map[string]string{"DATABASE_URL": "x", "SEED_RANDOM": "-1"}, "SEED_RANDOM"},
+		{"reset bad", map[string]string{"DATABASE_URL": "x", "SEED_RESET": "maybe"}, "SEED_RESET"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadSeed(env(tc.env))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want error that mentions %s", err, tc.want)
+			}
+		})
+	}
+}

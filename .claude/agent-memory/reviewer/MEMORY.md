@@ -2,3 +2,5 @@
 - [Go startup defects](go-startup-defects.md) — startup ping without timeout, listen-error race, signal not reset; check each new cmd/ binary
 - [Make and compose defects](make-compose-defects.md) — make shell, gofmt exit, pg_isready, port `:0`, pnpm store in bind mount, nginx redirect port
 - [Frontend trim defects](frontend-trim-defects.md) — stale d.ts, leftover 401 logic, vacuous asserts, stale globs, dead exports, peer deps
+- [Test DB harness defects](test-db-harness-defects.md) — URL rewrite vs ?dbname, err==nil constraint asserts, unused published port
+- [Seed generator defects](seed-generator-defects.md) — seed 0, Feb 29 age, indirect go.mod, `>=` asserts, restated SQL rule, untested money scale
