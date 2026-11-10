@@ -202,7 +202,8 @@ func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang
 		_ = sse.send("retry", retryEvent{Language: code, Errors: errs})
 
 		// A tool input that is not a JSON object is replayed as {} by the
-		// client, so the assistant turn can always go back as it is.
+		// client, and the replayed turn has no tool_use other than ToolUse, so
+		// the assistant turn can always go back as it is.
 		if toolCall {
 			req.Turns = append(req.Turns,
 				llm.Turn{Assistant: resp.Assistant},

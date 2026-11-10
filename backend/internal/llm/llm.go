@@ -66,7 +66,9 @@ type Client interface {
 	Generate(ctx context.Context, req Request) (Response, error)
 	// Stream is Generate with a callback for each fragment of the tool input.
 	// on is called from the calling goroutine, in order. The returned Response
-	// is the same as Generate would give for the final message.
+	// is built like the one from Generate, except that ToolUse.Input is the raw
+	// input as streamed. It can be cut off or not valid JSON, so the caller's
+	// validator must check it.
 	Stream(ctx context.Context, req Request, on func(StreamEvent)) (Response, error)
 }
 

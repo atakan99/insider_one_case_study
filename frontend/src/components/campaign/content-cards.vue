@@ -66,6 +66,7 @@ function handle(e: ContentEvent) {
     card.retrying = false
   }
   else if (e.event === 'retry') {
+    card.draft = undefined
     card.retrying = true
   }
   else if (e.event === 'final') {

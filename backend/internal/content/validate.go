@@ -12,6 +12,10 @@ import (
 	"unicode/utf8"
 )
 
+// tagCheckName is the first name used to render a field before the HTML tag
+// check.
+const tagCheckName = "A"
+
 type fieldRule struct {
 	key        string
 	max        int
@@ -90,7 +94,9 @@ func Validate(raw []byte, firstNameRunes int) (Content, Limits, []FieldError) {
 		}
 		vals[r.key] = s
 		n := len(errs)
-		checkText(s, r, func(format string, args ...any) { fail(r.key, format, args...) })
+		// The tag check runs on the rendered text, so "<{{first_name}}" is
+		// caught. The name starts with a letter, like a real first name.
+		checkText(Render(s, tagCheckName), r, func(format string, args ...any) { fail(r.key, format, args...) })
 		if _, err := ParseVars(s); err != nil {
 			fail(r.key, "%s", err.Error())
 		}

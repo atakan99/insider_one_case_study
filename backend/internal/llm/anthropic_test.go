@@ -162,7 +162,7 @@ func decode(t *testing.T, body string) *anthropic.BetaMessage {
 }
 
 func TestAnthropic_ParseResponse(t *testing.T) {
-	r := parseResponse(decode(t, toolUseBody), nil)
+	r := parseResponse(decode(t, toolUseBody), nil, "submit_segment")
 	if r.Refused || r.ToolUse == nil {
 		t.Fatalf("tool use response = %+v", r)
 	}
@@ -177,12 +177,12 @@ func TestAnthropic_ParseResponse(t *testing.T) {
 		t.Errorf("assistant = %T, want BetaMessageParam", r.Assistant)
 	}
 
-	r = parseResponse(decode(t, textBody), nil)
+	r = parseResponse(decode(t, textBody), nil, "submit_segment")
 	if r.ToolUse != nil || r.Refused || r.Assistant == nil {
 		t.Errorf("text response = %+v", r)
 	}
 
-	r = parseResponse(decode(t, refusalBody), nil)
+	r = parseResponse(decode(t, refusalBody), nil, "submit_segment")
 	if !r.Refused || r.ToolUse != nil {
 		t.Errorf("refusal response = %+v", r)
 	}
@@ -263,11 +263,11 @@ const cutOffBody = `{"id":"msg_4","type":"message","role":"assistant","model":"c
 "stop_reason":"max_tokens","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
 
 func TestAnthropic_ParseResponse_CutOff(t *testing.T) {
-	r := parseResponse(decode(t, cutOffBody), nil)
+	r := parseResponse(decode(t, cutOffBody), nil, "submit_content")
 	if !r.CutOff || r.Refused {
 		t.Errorf("response = %+v", r)
 	}
-	if r := parseResponse(decode(t, toolUseBody), nil); r.CutOff {
+	if r := parseResponse(decode(t, toolUseBody), nil, "submit_segment"); r.CutOff {
 		t.Errorf("tool_use stop must not be CutOff")
 	}
 }
@@ -300,7 +300,7 @@ func assistantBlocks(t *testing.T, a any) []map[string]any {
 }
 
 func TestAnthropic_ParseResponse_Fallback(t *testing.T) {
-	r := parseResponse(decode(t, fallbackBody), nil)
+	r := parseResponse(decode(t, fallbackBody), nil, "submit_content")
 	if r.ToolUse == nil || r.ToolUse.ID != "toolu_new" {
 		t.Fatalf("tool use = %+v", r.ToolUse)
 	}
@@ -325,7 +325,7 @@ const nonObjectInputBody = `{"id":"msg_6","type":"message","role":"assistant","m
 "stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
 
 func TestAnthropic_AssistantInvalidInput(t *testing.T) {
-	r := parseResponse(decode(t, nonObjectInputBody), nil)
+	r := parseResponse(decode(t, nonObjectInputBody), nil, "submit_content")
 	if r.ToolUse == nil || string(r.ToolUse.Input) != `"not an object"` {
 		t.Fatalf("tool use = %+v", r.ToolUse)
 	}
@@ -339,7 +339,7 @@ func TestAnthropic_AssistantInvalidInput(t *testing.T) {
 
 	// A raw input override that is cut off (the streaming case) is kept in
 	// ToolUse, and the replayed param still has {}.
-	r = parseResponse(decode(t, cutOffBody), map[int]string{0: `{"sms":"a`})
+	r = parseResponse(decode(t, cutOffBody), map[int]string{0: `{"sms":"a`}, "submit_content")
 	if string(r.ToolUse.Input) != `{"sms":"a` {
 		t.Errorf("tool use input = %s", r.ToolUse.Input)
 	}
@@ -397,7 +397,7 @@ func TestAnthropic_Stream(t *testing.T) {
 	)
 	c := streamClient(t, body)
 	var evs []StreamEvent
-	r, err := c.Stream(context.Background(), Request{Tool: testTool()}, func(ev StreamEvent) { evs = append(evs, ev) })
+	r, err := c.Stream(context.Background(), Request{Tool: Tool{Name: "submit_content"}}, func(ev StreamEvent) { evs = append(evs, ev) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestAnthropic_StreamCutOff(t *testing.T) {
 		`{"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":5}}`,
 		`{"type":"message_stop"}`,
 	)
-	r, err := streamClient(t, body).Stream(context.Background(), Request{Tool: testTool()}, func(StreamEvent) {})
+	r, err := streamClient(t, body).Stream(context.Background(), Request{Tool: Tool{Name: "submit_content"}}, func(StreamEvent) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,5 +440,47 @@ func TestAnthropic_StreamCutOff(t *testing.T) {
 	blocks := assistantBlocks(t, r.Assistant)
 	if in, ok := blocks[0]["input"].(map[string]any); !ok || len(in) != 0 {
 		t.Errorf("replayed input = %#v, want {}", blocks[0]["input"])
+	}
+}
+
+const wrongToolBody = `{"id":"msg_7","type":"message","role":"assistant","model":"claude-opus-5-5",
+"content":[
+ {"type":"text","text":"hi"},
+ {"type":"tool_use","id":"toolu_x","name":"other_tool","input":{"a":1}}
+],
+"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
+
+const twoCallsBody = `{"id":"msg_8","type":"message","role":"assistant","model":"claude-opus-5-5",
+"content":[
+ {"type":"tool_use","id":"toolu_wrong","name":"other_tool","input":{"a":1}},
+ {"type":"text","text":"hi"},
+ {"type":"tool_use","id":"toolu_a","name":"submit_content","input":{"sms":"a"}},
+ {"type":"tool_use","id":"toolu_b","name":"submit_content","input":{"sms":"b"}}
+],
+"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
+
+func TestAnthropic_ParseResponse_WrongToolName(t *testing.T) {
+	r := parseResponse(decode(t, wrongToolBody), nil, "submit_content")
+	if r.ToolUse != nil {
+		t.Fatalf("tool use = %+v, want nil", r.ToolUse)
+	}
+	blocks := assistantBlocks(t, r.Assistant)
+	if len(blocks) != 1 || blocks[0]["type"] != "text" {
+		t.Errorf("blocks = %v, want only the text block", blocks)
+	}
+}
+
+func TestAnthropic_ParseResponse_OneToolCall(t *testing.T) {
+	r := parseResponse(decode(t, twoCallsBody), nil, "submit_content")
+	if r.ToolUse == nil || r.ToolUse.ID != "toolu_a" || string(r.ToolUse.Input) != `{"sms":"a"}` {
+		t.Fatalf("tool use = %+v", r.ToolUse)
+	}
+	blocks := assistantBlocks(t, r.Assistant)
+	var got []string
+	for _, b := range blocks {
+		got = append(got, fmt.Sprint(b["type"], ":", b["id"]))
+	}
+	if s := strings.Join(got, ","); s != "text:<nil>,tool_use:toolu_a" {
+		t.Errorf("assistant blocks = %s", s)
 	}
 }

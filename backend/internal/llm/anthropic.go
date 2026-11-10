@@ -31,7 +31,7 @@ func (c *anthropicClient) Generate(ctx context.Context, req Request) (Response, 
 	if err != nil {
 		return Response{}, mapError(err)
 	}
-	return parseResponse(msg, nil), nil
+	return parseResponse(msg, nil, req.Tool.Name), nil
 }
 
 // Stream sends the request as a streaming call. It calls on for each
@@ -66,7 +66,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req Request, on func(Strea
 	if err := stream.Err(); err != nil {
 		return Response{}, mapError(err)
 	}
-	return parseResponse(&msg, inputs), nil
+	return parseResponse(&msg, inputs, req.Tool.Name), nil
 }
 
 func mapError(err error) error {
@@ -135,10 +135,14 @@ func (c *anthropicClient) buildParams(req Request) anthropic.BetaMessageNewParam
 //
 // With a server-side fallback, the content has a fallback block at each model
 // switch. Only text blocks from before the last fallback block are kept; a
-// tool_use before it is not valid. ToolUse is the first tool call after the
-// last fallback block. A tool_use whose input is not a JSON object is replayed
+// tool_use before it is not valid. ToolUse is the first call of toolName after
+// the last fallback block. Assistant keeps only that tool_use: any other
+// tool_use (a second call, or a call of another tool) would have no
+// tool_result in a repair round, and the API rejects that. If there is no call
+// of toolName, ToolUse is nil and Assistant has no tool_use, so a plain user
+// turn can follow it. A tool_use whose input is not a JSON object is replayed
 // with {} as the input, so that Assistant can be sent back to the API.
-func parseResponse(msg *anthropic.BetaMessage, rawInputs map[int]string) Response {
+func parseResponse(msg *anthropic.BetaMessage, rawInputs map[int]string, toolName string) Response {
 	resp := Response{
 		Refused: msg.StopReason == anthropic.BetaStopReasonRefusal,
 		CutOff:  msg.StopReason == anthropic.BetaStopReasonMaxTokens,
@@ -158,7 +162,7 @@ func parseResponse(msg *anthropic.BetaMessage, rawInputs map[int]string) Respons
 		case anthropic.BetaTextBlock:
 			content = append(content, block.ToParam())
 		case anthropic.BetaToolUseBlock:
-			if i < lastFallback {
+			if i < lastFallback || resp.ToolUse != nil || v.Name != toolName {
 				continue
 			}
 			raw, ok := rawInputs[i]
@@ -170,9 +174,7 @@ func parseResponse(msg *anthropic.BetaMessage, rawInputs map[int]string) Respons
 				p.Input = map[string]any{}
 			}
 			content = append(content, anthropic.BetaContentBlockParamUnion{OfToolUse: &p})
-			if resp.ToolUse == nil {
-				resp.ToolUse = &ToolUse{ID: v.ID, Name: v.Name, Input: json.RawMessage(raw)}
-			}
+			resp.ToolUse = &ToolUse{ID: v.ID, Name: v.Name, Input: json.RawMessage(raw)}
 		default:
 			if i < lastFallback {
 				continue

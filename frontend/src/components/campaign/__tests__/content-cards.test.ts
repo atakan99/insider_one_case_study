@@ -109,6 +109,23 @@ describe('content cards', () => {
     expect(w.find('[data-language="tr"]').text()).toContain('121 / 160')
   })
 
+  it('clears the draft on retry and shows the next draft', async () => {
+    const r = open()
+    const w = make()
+    r.get()(audience)
+    r.get()({ event: 'draft', data: { language: 'tr', content } })
+    await flushPromises()
+    expect(w.find('[data-language="tr"] [data-field="sms"]').text()).toBe('Hi Ayse')
+    r.get()({ event: 'retry', data: { language: 'tr' } })
+    await flushPromises()
+    expect(w.find('[data-language="tr"] [data-field="sms"]').exists()).toBe(false)
+    expect(w.find('[data-language="tr"]').text()).not.toContain('Hi Ayse')
+    expect(w.find('[data-language="tr"]').text()).toContain('Fixing content…')
+    r.get()({ event: 'draft', data: { language: 'tr', content: { ...content, sms: 'Fixed SMS' } } })
+    await flushPromises()
+    expect(w.find('[data-language="tr"] [data-field="sms"]').text()).toBe('Fixed SMS')
+  })
+
   it('regenerates with the same brief and rule, off while running', async () => {
     const r = open()
     const w = make()
