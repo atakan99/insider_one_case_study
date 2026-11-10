@@ -11,7 +11,13 @@ function handleError(error: Error) {
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError: handleError }),
-  mutationCache: new MutationCache({ onError: handleError }),
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      if (mutation.meta?.silent)
+        return
+      handleError(error)
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5,

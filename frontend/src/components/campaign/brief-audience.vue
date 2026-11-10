@@ -2,7 +2,7 @@
 import { useMutation } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +15,7 @@ const brief = ref('')
 const length = computed(() => brief.value.length)
 const canSubmit = computed(() => brief.value.trim() !== '' && length.value <= MAX_BRIEF)
 
-const mutation = useMutation({ mutationFn: previewSegment })
+const mutation = useMutation({ mutationFn: previewSegment, meta: { silent: true } })
 const pending = computed(() => mutation.isPending.value)
 const result = computed(() => (mutation.isError.value ? undefined : mutation.data.value))
 const errorMessage = computed(() => (mutation.isError.value ? apiErrorMessage(mutation.error.value) : ''))
@@ -62,13 +62,21 @@ function submit() {
         </p>
       </CardHeader>
       <CardContent class="space-y-4">
-        <dl class="grid grid-cols-2 gap-4">
+        <dl class="grid grid-cols-3 gap-4">
           <div>
             <dt class="text-sm text-muted-foreground">
               Email
             </dt>
             <dd class="text-2xl font-semibold">
               {{ result.audience.email }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-sm text-muted-foreground">
+              Reachable
+            </dt>
+            <dd class="text-2xl font-semibold">
+              {{ result.audience.reachable }}
             </dd>
           </div>
           <div>
@@ -123,11 +131,16 @@ function submit() {
           </tbody>
         </table>
 
-        <ul v-if="result.unmapped.length" class="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-          <li v-for="(note, i) in result.unmapped" :key="i">
-            {{ note }}
-          </li>
-        </ul>
+        <Alert v-if="result.unmapped.length">
+          <AlertTitle>Not used from the brief</AlertTitle>
+          <AlertDescription>
+            <ul class="list-disc space-y-1 pl-5">
+              <li v-for="(note, i) in result.unmapped" :key="i">
+                {{ note }}
+              </li>
+            </ul>
+          </AlertDescription>
+        </Alert>
       </CardContent>
     </Card>
   </div>

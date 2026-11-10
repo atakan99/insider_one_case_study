@@ -74,7 +74,11 @@ describe('brief audience', () => {
     expect(t).toContain('205')
     expect(t).toContain('excluded: no consent')
     expect(t).toContain('82')
-    expect(w.findAll('tr').some(r => r.text().includes('tr'))).toBe(true)
+    expect(t).toContain('Reachable')
+    expect(t).toContain('300')
+    expect(t).toContain('Not used from the brief')
+    const cells = w.findAll('tbody tr').map(r => r.findAll('td').map(c => c.text()))
+    expect(cells).toEqual([['tr', '100', '50', '10']])
     expect(t).toContain('Could not map "loyal"')
   })
 

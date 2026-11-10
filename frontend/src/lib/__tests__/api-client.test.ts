@@ -81,6 +81,17 @@ describe('aPI error handling', () => {
     expect(notify).toHaveBeenCalledExactlyOnceWith('Service unavailable')
   })
 
+  it('does not notify for a silent mutation error', async () => {
+    fetchMock.mockImplementation(() => respond(503))
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      mutationFn: () => apiFetch('/campaigns', { method: 'post' }),
+      meta: { silent: true },
+    })
+
+    await expect(mutation.execute(undefined)).rejects.toMatchObject({ status: 503 })
+    expect(notify).not.toHaveBeenCalled()
+  })
+
   it('notifies once for a 401 response', async () => {
     fetchMock.mockImplementation(() => respond(401))
 
