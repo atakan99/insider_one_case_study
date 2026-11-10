@@ -61,21 +61,28 @@ func run() error {
 	mux := http.NewServeMux()
 	httpapi.RegisterHealth(mux, pool)
 
-	llmClient, err := llm.New(cfg, nil)
+	llmClient, err := llm.New(cfg, mockDefault)
 	if err != nil {
 		return err
 	}
+	if m, ok := llmClient.(*llm.Mock); ok {
+		// Slow, small fragments, so that the demo shows the stream.
+		m.SetStream(16, 30*time.Millisecond)
+	}
 	slog.Info("llm configured", "model", cfg.AnthropicModel, "llm_mode", cfg.LLMMode)
+	count := func(ctx context.Context, w segment.Where) (segment.Audience, error) {
+		return segment.CountAudience(ctx, pool, w)
+	}
 	httpapi.RegisterSegments(mux, &httpapi.SegmentPreviewer{
-		LLM:   llmClient,
-		Allow: segment.Default(),
-		Count: func(ctx context.Context, w segment.Where) (segment.Audience, error) {
-			return segment.CountAudience(ctx, pool, w)
-		},
+		LLM:        llmClient,
+		Allow:      segment.Default(),
+		Count:      count,
 		Now:        time.Now,
 		LLMTimeout: 20 * time.Second,
 	})
+	httpapi.RegisterContent(mux, newContentGenerator(llmClient, segment.Default(), count))
 
+	// No WriteTimeout: the content SSE stream can last 90 s (NFR-9).
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.CORS(cfg.CORSOrigins, mux),
