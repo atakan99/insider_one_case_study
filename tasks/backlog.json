@@ -139,7 +139,7 @@
       "NFR-10. make verify passes.",
       "NFR-11. The recipients function is the only function in internal/segment that returns user rows. Its channel argument is a type with two values. No argument turns off the consent condition."
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "05-content-generation",
