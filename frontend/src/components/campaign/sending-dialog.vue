@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { currentStep } from '@/lib/delivery'
 
 const props = defineProps<{ campaignId: number, open: boolean, progress: Progress | null }>()
-// The kebab-case names are the component contract of the plan.
 
 const emit = defineEmits<{ 'update:open': [open: boolean], 'openList': [] }>()
 

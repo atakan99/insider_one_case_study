@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Campaign } from '@/lib/campaigns'
 import type { Progress } from '@/lib/delivery'
@@ -13,8 +13,13 @@ import CampaignPage from '../[id].vue'
 
 const push = vi.fn()
 const replace = vi.fn()
-const route = vi.hoisted(() => ({ params: { id: '12' } as Record<string, string>, query: {} as Record<string, string> }))
-vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push, replace }) }))
+const holder = vi.hoisted(() => ({ route: null as unknown as { params: Record<string, string>, query: Record<string, string> } }))
+vi.mock('vue-router', async () => {
+  const { reactive } = await import('vue')
+  holder.route = reactive({ params: { id: '12' }, query: {} })
+  return { useRoute: () => holder.route, useRouter: () => ({ push, replace }) }
+})
+const route = holder.route
 vi.mock('@/lib/delivery', async (orig) => {
   const real = await orig<typeof import('@/lib/delivery')>()
   return { ...real, getProgress: vi.fn(), watchProgress: vi.fn() }
@@ -41,11 +46,11 @@ vi.mock('@/components/campaign/sending-dialog.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
     default: defineComponent({
-      props: { campaignId: Number, open: Boolean },
+      props: { campaignId: Number, open: Boolean, progress: Object },
       emits: ['update:open', 'openList'],
       setup(props, { emit }) {
         return () => props.open
-          ? h('div', { 'data-test': 'sending-stub' }, [h('button', { 'data-test': 'stub-open-list', 'onClick': () => emit('openList') }, 'l')])
+          ? h('div', { 'data-test': 'sending-stub', 'data-status': (props.progress as { status: string } | null)?.status }, [h('button', { 'data-test': 'stub-open-list', 'onClick': () => emit('openList') }, 'l')])
           : null
       },
     }),
@@ -76,7 +81,7 @@ const watch = vi.mocked(watchProgress)
 const stopWatch = vi.fn()
 let pushProgress: (p: Progress) => void
 const zero = { total: 0, queued: 0, sending: 0, retrying: 0, sent: 0, failed: 0, unknown: 0, skipped: 0, retryable_failed: 0 }
-const prog = (status: string) => ({ campaign_id: 12, status, channels: { sms: zero, email: zero } }) as never
+const prog = (status: string): Progress => ({ campaign_id: 12, status: status as Progress['status'], channels: { sms: zero, email: zero } }) as Progress
 
 function campaign(over: Partial<Campaign> = {}): Campaign {
   return {
@@ -93,8 +98,11 @@ function campaign(over: Partial<Campaign> = {}): Campaign {
   }
 }
 
+const mounted: { unmount: () => void }[] = []
 function make() {
-  return mount(CampaignPage, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  const w = mount(CampaignPage, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  mounted.push(w)
+  return w
 }
 
 describe('campaign page', () => {
@@ -111,6 +119,12 @@ describe('campaign page', () => {
     push.mockReset()
     replace.mockReset()
     route.query = {}
+    route.params.id = '12'
+  })
+
+  afterEach(() => {
+    // The route is shared and reactive, so a page left mounted would react to the next test.
+    for (const w of mounted.splice(0)) w.unmount()
   })
 
   it('shows an approved campaign read-only', async () => {
@@ -158,6 +172,7 @@ describe('campaign page', () => {
     const w = make()
     await flushPromises()
     expect(w.find('[data-test="sending-stub"]').exists()).toBe(true)
+    expect(w.find('[data-test="sending-stub"]').attributes('data-status')).toBe('approved')
     expect(replace).toHaveBeenCalledWith({ query: {} })
   })
 
@@ -254,5 +269,43 @@ describe('campaign page', () => {
     expect(w.text()).toContain('Campaign #12')
     expect(w.text()).toContain('Istanbul users')
     expect(w.find('[data-test="progress-error"]').text()).toBe('Progress is not available.')
+  })
+
+  it('drops a stale progress response after the route id changes', async () => {
+    let resolveOld!: (p: Progress) => void
+    get.mockImplementation(async (cid: number) => campaign({ id: cid, status: 'sending' }))
+    progress.mockImplementation((cid: number) => cid === 12
+      ? new Promise<Progress>((r) => {
+          resolveOld = r
+        })
+      : Promise.resolve({ ...prog('queued'), campaign_id: 13 }))
+    const w = make()
+    await flushPromises()
+    route.params.id = '13'
+    await flushPromises()
+    expect(w.find('[data-test="delivery-stub"]').attributes('data-status')).toBe('queued')
+    expect(watch).toHaveBeenCalledTimes(1)
+    expect(watch).toHaveBeenLastCalledWith(13, expect.any(Function))
+    resolveOld({ ...prog('completed'), campaign_id: 12 })
+    await flushPromises()
+    expect(w.find('[data-test="delivery-stub"]').attributes('data-status')).toBe('queued')
+    expect(watch).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a stale progress error after the route id changes', async () => {
+    let rejectOld!: (e: unknown) => void
+    get.mockImplementation(async (cid: number) => campaign({ id: cid, status: 'sending' }))
+    progress.mockImplementation((cid: number) => cid === 12
+      ? new Promise<Progress>((_, rej) => {
+          rejectOld = rej
+        })
+      : Promise.resolve({ ...prog('queued'), campaign_id: 13 }))
+    const w = make()
+    await flushPromises()
+    route.params.id = '13'
+    await flushPromises()
+    rejectOld(new CampaignRequestError('request_failed', 'Old failure.', 500, []))
+    await flushPromises()
+    expect(w.find('[data-test="progress-error"]').exists()).toBe(false)
   })
 })

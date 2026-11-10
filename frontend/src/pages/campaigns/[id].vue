@@ -42,7 +42,10 @@ function startWatching() {
   stopWatching()
   if (!progress.value || !['approved', 'queued', 'sending'].includes(progress.value.status))
     return
-  stopWatch = watchProgress(id.value, (p) => {
+  const watchedId = id.value
+  stopWatch = watchProgress(watchedId, (p) => {
+    if (watchedId !== id.value)
+      return
     progress.value = p
     progressError.value = ''
     if (campaign.value)
@@ -52,9 +55,12 @@ function startWatching() {
   })
 }
 
-async function refreshProgress() {
+// A reload bumps loadToken, so a response from an older load or id is dropped.
+async function refreshProgress(mine = loadToken) {
   try {
     const p = await getProgress(id.value)
+    if (mine !== loadToken)
+      return
     progress.value = p
     progressError.value = ''
     if (campaign.value)
@@ -62,6 +68,8 @@ async function refreshProgress() {
     startWatching()
   }
   catch (err) {
+    if (mine !== loadToken)
+      return
     progressError.value = err instanceof CampaignRequestError ? err.message : FALLBACK_MESSAGE
   }
 }
@@ -83,7 +91,7 @@ async function load() {
     progress.value = null
     progressError.value = ''
     if (c.status !== 'draft')
-      await refreshProgress()
+      await refreshProgress(mine)
   }
   catch (err) {
     if (mine !== loadToken)
@@ -217,7 +225,7 @@ function onReviewOpen(v: boolean) {
           :progress="progress"
           @view-progress="sendingOpen = true"
           @retried="onRetried"
-          @refresh="refreshProgress"
+          @refresh="refreshProgress()"
         />
         <p v-if="progressError" data-test="progress-error" class="text-destructive text-sm">
           {{ progressError }}
