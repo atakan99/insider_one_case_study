@@ -354,7 +354,7 @@ func (a Allowlist) DecodeAnswer(raw []byte) (Answer, []FieldError) {
 	}
 	switch ans.Status {
 	case "ok":
-		if _, has := m["reason"]; has {
+		if present(m, "reason") {
 			v.fail("reason", "is not allowed when status is ok")
 		}
 		if rr, has := m["rule"]; !has {
@@ -368,7 +368,7 @@ func (a Allowlist) DecodeAnswer(raw []byte) (Answer, []FieldError) {
 			v.errs = append(v.errs, rv.errs...)
 			ans.Rule = Rule{root: g}
 		}
-		if ur, has := m["unmapped"]; has {
+		if ur, has := m["unmapped"]; has && !isNull(ur) {
 			var items []json.RawMessage
 			if t := bytes.TrimSpace(ur); t[0] != '[' || json.Unmarshal(ur, &items) != nil {
 				v.fail("unmapped", "must be a list of strings")
@@ -391,7 +391,7 @@ func (a Allowlist) DecodeAnswer(raw []byte) (Answer, []FieldError) {
 		}
 	case "unsupported":
 		for _, k := range []string{"rule", "unmapped"} {
-			if _, has := m[k]; has {
+			if present(m, k) {
 				v.fail(k, "is not allowed when status is unsupported")
 			}
 		}
@@ -408,4 +408,21 @@ func (a Allowlist) DecodeAnswer(raw []byte) (Answer, []FieldError) {
 		return Answer{}, v.errs
 	}
 	return ans, nil
+}
+
+func isNull(raw json.RawMessage) bool { return string(bytes.TrimSpace(raw)) == "null" }
+
+// present reports whether key has a meaningful value. A missing key, null,
+// an empty string and an empty list all count as absent, because the strict
+// tool schema lets the model send them for keys that do not apply.
+func present(m map[string]json.RawMessage, key string) bool {
+	raw, has := m[key]
+	if !has {
+		return false
+	}
+	switch string(bytes.TrimSpace(raw)) {
+	case "null", `""`, "[]":
+		return false
+	}
+	return true
 }

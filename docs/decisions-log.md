@@ -197,3 +197,10 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** A proxy in nginx and Vite. CORS headers on the api.
 - **Choice:** The api sends CORS headers for the origins in `CORS_ORIGINS`. The default is `http://localhost:3000,http://localhost:5173`. The api answers `OPTIONS` preflight requests.
 - **Why:** The frontend already calls `VITE_SERVER_API_URL` directly. CORS needs no change in the nginx and Vite configs.
+
+## D-029 Strictness rules of the rule validator
+
+- **Context:** The validator reads a tree and an answer from Claude. Four points in the spec are open. They are the tree depth, the node type, the keys that do not apply to a status, and duplicate JSON keys.
+- **Options:** Count all nodes or only groups for the depth. Decide the node type from `op` or from `field`. Reject or ignore empty values for keys that do not apply. Detect duplicate keys or not.
+- **Choice:** The depth counts group levels. The root is level 1. A condition in a level 3 group is valid. A node with a `field` key is a condition. All other nodes are groups. A value of `null`, `""` or `[]` counts as absent for a key that does not apply to the status. A non-empty value for such a key fails. The validator does not detect duplicate JSON keys. The last one wins, and the validator still checks that value.
+- **Why:** The example rule has a condition in a level 2 group. A count of all nodes would reject a rule that the spec allows. The tool schema is flat. Thus the model can send empty values for keys that do not apply. A repair round for these would turn a true `unsupported` answer into `segment_invalid`. A duplicate key cannot add a field that the validator does not check, so it gives no way to attack.
