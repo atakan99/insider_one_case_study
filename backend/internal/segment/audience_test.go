@@ -2,6 +2,7 @@ package segment
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -263,5 +264,18 @@ func TestCountAudience_Timeout(t *testing.T) {
 	w := Where{sql: "(SELECT true FROM pg_sleep(0.1))"}
 	if _, err := CountAudience(ctx, pool, w); err == nil {
 		t.Fatal("want timeout error")
+	}
+}
+
+func TestEmptyWhereIsRejected(t *testing.T) {
+	ctx := context.Background()
+	if _, err := Recipients(ctx, nil, Where{}, Email()); !errors.Is(err, ErrEmptyWhere) {
+		t.Errorf("Recipients err = %v, want ErrEmptyWhere", err)
+	}
+	if _, err := CountAudience(ctx, nil, Where{}); !errors.Is(err, ErrEmptyWhere) {
+		t.Errorf("CountAudience err = %v, want ErrEmptyWhere", err)
+	}
+	if ErrEmptyWhere.Error() != "segment: empty where" {
+		t.Errorf("message = %q", ErrEmptyWhere.Error())
 	}
 }

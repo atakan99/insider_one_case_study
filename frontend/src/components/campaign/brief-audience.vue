@@ -41,7 +41,7 @@ function submit() {
           {{ length }} / {{ MAX_BRIEF }}
         </span>
         <Button :disabled="!canSubmit || pending" @click="submit">
-          Generate segment
+          Find audience
         </Button>
       </div>
     </div>

@@ -50,7 +50,7 @@ ai-sessions/
    - If the validation fails, the backend sends the errors back one time as a `tool_result` with `is_error: true`. If the second answer also fails, the api returns `422` (D-024).
    - The backend compiles the valid rule to a parameterized query. Relative times use the wall clock (D-026).
    - The response has the rule, a description that the backend writes (D-023), and the audience counts for each channel and each language. The backend adds no language filter (D-022).
-   - A user is in the count of a channel only if the user has consent for that channel. The query goes through `Recipients`, which applies this consent rule.
+   - A user is in the count of a channel only if the user has consent for that channel. The preview count applies consent with `FILTER` columns in `CountAudience`. `Recipients` is the only function that returns user rows. It always adds the consent condition for its channel. Slices 05 to 07 get recipients only through `Recipients`.
    - The api sends CORS headers for the origins in `CORS_ORIGINS` (D-028). The default model is Claude Opus 5.5 (D-027).
 2. **Content** — The UI streams the SMS and email content.
    - TBD per slice.

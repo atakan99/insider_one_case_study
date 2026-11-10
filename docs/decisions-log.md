@@ -195,7 +195,7 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 - **Context:** The frontend runs on port 3000 (nginx) or 5173 (`pnpm dev`). It calls the api on port 8080. The browser treats this as a different origin.
 - **Options:** A proxy in nginx and Vite. CORS headers on the api.
-- **Choice:** The api sends CORS headers for the origins in `CORS_ORIGINS`. The default is `http://localhost:3000,http://localhost:5173`. The api answers `OPTIONS` preflight requests.
+- **Choice:** The api sends CORS headers for the origins in `CORS_ORIGINS`. The default has `localhost` and `127.0.0.1` on ports 3000 and 5173. The api answers `OPTIONS` preflight requests.
 - **Why:** The frontend already calls `VITE_SERVER_API_URL` directly. CORS needs no change in the nginx and Vite configs.
 
 ## D-029 Strictness rules of the rule validator

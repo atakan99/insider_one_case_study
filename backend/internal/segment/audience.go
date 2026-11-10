@@ -76,6 +76,9 @@ func inTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error 
 
 // CountAudience counts the users that match w, by language and channel consent.
 func CountAudience(ctx context.Context, pool *pgxpool.Pool, w Where) (Audience, error) {
+	if w.sql == "" {
+		return Audience{}, ErrEmptyWhere
+	}
 	q := `SELECT language,
        count(*) FILTER (WHERE email_consent),
        count(*) FILTER (WHERE sms_consent),
@@ -125,6 +128,9 @@ func Email() Channel { return Channel{emailColumn} }
 // ErrInvalidChannel means the channel is the zero value.
 var ErrInvalidChannel = errors.New("segment: invalid channel")
 
+// ErrEmptyWhere means the Where is the zero value.
+var ErrEmptyWhere = errors.New("segment: empty where")
+
 // Recipient is a user who can get a message on one channel.
 type Recipient struct {
 	ID        int64
@@ -142,6 +148,9 @@ func Recipients(ctx context.Context, pool *pgxpool.Pool, w Where, ch Channel) ([
 	case smsColumn, emailColumn:
 	default:
 		return nil, ErrInvalidChannel
+	}
+	if w.sql == "" {
+		return nil, ErrEmptyWhere
 	}
 	q := `SELECT id, first_name, last_name, email, phone, language
 FROM users

@@ -64,7 +64,7 @@ func (v *validator) checkDocument(raw []byte) (json.RawMessage, bool) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var msg json.RawMessage
 	if err := dec.Decode(&msg); err != nil {
-		v.fail("", "not valid JSON: %v", err)
+		v.fail("", "not valid JSON")
 		return nil, false
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
@@ -101,7 +101,7 @@ func (v *validator) object(path string, raw json.RawMessage, allowed ...string) 
 			}
 		}
 		if !ok {
-			v.fail(join(path, k), "unknown key")
+			v.fail(join(path, truncate(k, 40)), "unknown key")
 		}
 	}
 	return m, true

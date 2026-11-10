@@ -184,7 +184,7 @@ func TestLoad_LLMSettings(t *testing.T) {
 	if cfg.AnthropicModel != "claude-opus-5-5" {
 		t.Errorf("AnthropicModel = %q", cfg.AnthropicModel)
 	}
-	want := []string{"http://localhost:3000", "http://localhost:5173"}
+	want := []string{"http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"}
 	if strings.Join(cfg.CORSOrigins, "|") != strings.Join(want, "|") {
 		t.Errorf("CORSOrigins = %v, want %v", cfg.CORSOrigins, want)
 	}

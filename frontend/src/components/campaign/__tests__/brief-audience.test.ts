@@ -41,6 +41,10 @@ describe('brief audience', () => {
     vi.mocked(previewSegment).mockReset()
   })
 
+  it('labels the button Find audience', () => {
+    expect(make().find('button').text()).toBe('Find audience')
+  })
+
   it('disables the button for an empty brief and for 1001 characters', async () => {
     const w = make()
     const btn = () => w.find('button')

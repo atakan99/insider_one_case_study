@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const exampleRule = `{
@@ -116,6 +117,17 @@ func TestParseRule_Rejects(t *testing.T) {
 				t.Fatalf("path = %q, want %q (%v)", errs[0].Path, tt.path, errs)
 			}
 		})
+	}
+}
+
+func TestParseRule_LongUnknownKeyIsTruncated(t *testing.T) {
+	key := strings.Repeat("k", 100)
+	_, errs := Default().ParseRule([]byte(`{"op":"and","conditions":[],"` + key + `":1}`))
+	if len(errs) == 0 {
+		t.Fatal("expected errors")
+	}
+	if got := errs[0].Path; !strings.HasPrefix(got, strings.Repeat("k", 40)) || utf8.RuneCountInString(strings.TrimSuffix(got, "...")) > 40 {
+		t.Fatalf("path = %q", got)
 	}
 }
 

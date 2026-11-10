@@ -20,7 +20,7 @@ var (
 	ErrBriefTooLong = errors.New("brief is too long")
 )
 
-var briefTag = regexp.MustCompile(`(?i)</?brief>`)
+var briefTag = regexp.MustCompile(`(?i)<\s*/?\s*brief\s*>`)
 
 // SanitizeBrief cleans a brief and checks it. It normalizes to NFC, makes
 // line breaks "\n", drops control and format characters (except \n and \t),
