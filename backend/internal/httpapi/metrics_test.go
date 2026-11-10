@@ -3,10 +3,13 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -97,4 +100,44 @@ func TestMetrics_KeepsFlusher(t *testing.T) {
 		}
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+}
+
+var idSegment = regexp.MustCompile(`(^|/)[0-9]+(/|$)`)
+
+// FR-19: no label value is a campaign id or an email. The names le, quantile,
+// code and version hold numbers by design (D-081).
+func TestMetrics_NoIDOrEmailInLabels(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	m := NewHTTPMetrics(reg)
+	mux := http.NewServeMux()
+	ok := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
+	mux.HandleFunc("GET /api/campaigns/{id}", ok)
+	mux.HandleFunc("GET /api/campaigns/{id}/progress", ok)
+	h := m.Wrap(mux)
+	for _, path := range []string{"/api/campaigns/1", "/api/campaigns/1/progress"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	skip := map[string]bool{"le": true, "quantile": true, "code": true, "version": true}
+	checked := 0
+	for _, mf := range mfs {
+		for _, mt := range mf.Metric {
+			for _, l := range mt.Label {
+				if skip[l.GetName()] {
+					continue
+				}
+				checked++
+				if l.GetValue() == "1" || idSegment.MatchString(l.GetValue()) || strings.Contains(l.GetValue(), "@") {
+					t.Errorf("%s: label %s=%q holds an id or an email", mf.GetName(), l.GetName(), l.GetValue())
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no label was checked")
+	}
 }

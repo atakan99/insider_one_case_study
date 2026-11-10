@@ -35,13 +35,18 @@ async function refresh() {
     return
   inFlight = true
   try {
-    const [s, h] = await Promise.allSettled([getDashboardStats(), getDashboardHealth()])
+    // Each call sets its own part, so a slow call does not delay the other.
+    const statsCall = getDashboardStats().then((v) => {
+      if (!unmounted)
+        stats.value = v
+    })
+    const healthCall = getDashboardHealth().then((v) => {
+      if (!unmounted)
+        health.value = v
+    })
+    const [s, h] = await Promise.allSettled([statsCall, healthCall])
     if (unmounted)
       return
-    if (s.status === 'fulfilled')
-      stats.value = s.value
-    if (h.status === 'fulfilled')
-      health.value = h.value
     failed.value = s.status === 'rejected' || h.status === 'rejected'
     if (!failed.value)
       lastUpdate.value = clock(new Date())
@@ -82,9 +87,9 @@ onUnmounted(() => {
 
     <template v-if="stats">
       <TotalsCards :totals="stats.totals" />
-      <div class="grid gap-6 lg:grid-cols-2">
-        <ThroughputChart :throughput="stats.throughput" />
-        <FailuresCard :failures="stats.failures" :mean-attempts="stats.mean_attempts" />
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ThroughputChart class="min-w-0" :throughput="stats.throughput" />
+        <FailuresCard class="min-w-0" :failures="stats.failures" :mean-attempts="stats.mean_attempts" />
       </div>
       <CampaignsTable :campaigns="stats.campaigns" />
     </template>

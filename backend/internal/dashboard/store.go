@@ -68,7 +68,7 @@ func (s *Store) Stats(ctx context.Context, now time.Time) (Stats, error) {
 			t.Unknown = n
 		case delivery.StatusSkipped:
 			t.Skipped = n
-		default:
+		case delivery.StatusQueued, delivery.StatusSending, delivery.StatusRetrying:
 			t.InProgress += n
 		}
 		st.Totals[ch] = t

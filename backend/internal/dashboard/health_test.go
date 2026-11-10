@@ -3,8 +3,10 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,5 +133,76 @@ func TestChecker_Streams(t *testing.T) {
 	}
 	if email.Length == nil || *email.Length != 0 || email.Pending == nil || *email.Pending != 0 {
 		t.Errorf("email = %+v, want length 0, pending 0", email)
+	}
+}
+
+// silentRedis listens, accepts connections and never writes.
+func silentRedis(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var conns []net.Conn
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+	return ln.Addr().String()
+}
+
+func slowRedisChecker(t *testing.T, timeout time.Duration, ctxTimeout bool) *Checker {
+	t.Helper()
+	rdb := redis.NewClient(&redis.Options{Addr: silentRedis(t), ContextTimeoutEnabled: ctxTimeout})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return &Checker{
+		DB: pinger{}, Redis: RedisPinger{Client: rdb}, Queue: delivery.NewQueue(rdb, "slow"),
+		Timeout: timeout,
+	}
+}
+
+func TestChecker_SlowRedisIsBoundedByTimeout(t *testing.T) {
+	c := slowRedisChecker(t, 300*time.Millisecond, true)
+	start := time.Now()
+	h := c.Check(context.Background())
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("Check took %v, want under 2s", d)
+	}
+	if h.Services["redis"] != "down" {
+		t.Errorf("redis = %q, want down", h.Services["redis"])
+	}
+	for _, s := range h.Streams {
+		if s.Length != nil || s.Pending != nil {
+			t.Errorf("stream %s: length/pending = %v/%v, want nil", s.Channel, s.Length, s.Pending)
+		}
+	}
+}
+
+func TestChecker_ZeroTimeoutMeansOneSecond(t *testing.T) {
+	c := slowRedisChecker(t, 0, true)
+	start := time.Now()
+	h := c.Check(context.Background())
+	d := time.Since(start)
+	if d < 900*time.Millisecond || d > 2*time.Second {
+		t.Errorf("Check took %v, want about 1s", d)
+	}
+	if h.Services["redis"] != "down" {
+		t.Errorf("redis = %q, want down", h.Services["redis"])
 	}
 }

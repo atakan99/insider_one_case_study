@@ -15,10 +15,11 @@ describe('failures card', () => {
     const w = mount(FailuresCard, { props: { failures, meanAttempts: { sms: 1.04, email: null } } })
     const rows = w.findAll('[data-test="failure-row"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0].text()).toContain('provider_error')
-    expect(rows[0].text()).toContain('3')
-    expect(rows[0].text()).toContain('1')
-    expect(rows[1].text()).toContain('timeout')
+    const cells = rows.map(r => r.findAll('td').map(c => c.text()))
+    expect(cells).toEqual([
+      ['failed', 'provider_error', '3', '1'],
+      ['unknown', 'timeout', '2', '0'],
+    ])
   })
 
   it('shows mean attempts and a dash for null', () => {

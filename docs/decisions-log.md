@@ -550,7 +550,7 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 ## D-079 `dashboard.RedisPinger` adapts go-redis
 
-- **Context:** The health checker needs a ping and the stream counts. It must not depend on the go-redis types in its tests.
+- **Context:** The health checker needs a ping and the stream counts. Only the ping must be behind an interface, so that a test can fake it. The stream counts use `delivery.Queue`, which uses go-redis.
 - **Options:** Use go-redis in the checker. Define a small `Pinger` interface.
 - **Choice:** The checker takes a `Pinger` interface. `dashboard.RedisPinger` adapts the go-redis client to it.
 - **Why:** A test can give the checker a fake, and the checker has one small dependency.
@@ -575,3 +575,10 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Show the last success of any call. Show the last time both calls succeeded.
 - **Choice:** After a partial failure, "Last update" shows the last time both calls succeeded.
 - **Why:** A partial refresh leaves part of the page old. The time must not claim that the page is current.
+
+## D-083 Redis clients honor context deadlines where a check or a scrape uses them
+
+- **Context:** go-redis v9 sets `ContextTimeoutEnabled` to false by default. A context deadline then does not bound a read. The read timeout of 5 s applies instead. The 1 s timeout of the health checks, `/readyz` and the worker stream collector did not hold against a slow Redis.
+- **Options:** Set the option on every client. Set it on the api client and give the worker stream collector its own client.
+- **Choice:** The api client sets `ContextTimeoutEnabled`. The worker main client does not change. The stream collector uses `delivery.Queue` on a second client with a pool of 2 and `ContextTimeoutEnabled`.
+- **Why:** The blocking reads of the worker consumers must keep the timing of slice 07. A second small client bounds the scrape without a change to the consumers.

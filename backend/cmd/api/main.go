@@ -70,6 +70,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Without this option a context deadline does not bound a Redis read. A slow
+	// Redis would then hold /readyz and the health checks for the read timeout.
+	redisOpt.ContextTimeoutEnabled = true
 	rdb := redis.NewClient(redisOpt)
 	defer rdb.Close()
 	redisPing := dashboard.RedisPinger{Client: rdb}

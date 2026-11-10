@@ -106,7 +106,16 @@ func run() error {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
-	metrics := delivery.NewMetrics(reg, queue)
+	// The stream collector runs on its own client. This client honors context
+	// deadlines, so a slow Redis cannot hold a scrape. The main client does not
+	// change, because the blocking reads of the consumers must keep their timing.
+	statOpt := *opt
+	statOpt.PoolSize = 2
+	statOpt.ContextTimeoutEnabled = true
+	statRdb := redis.NewClient(&statOpt)
+	defer statRdb.Close()
+	statQueue := delivery.NewQueue(statRdb, fmt.Sprintf("%s-%d-metrics", host, os.Getpid()))
+	metrics := delivery.NewMetrics(reg, statQueue)
 	w := &delivery.Worker{
 		Store:    delivery.NewStore(pool),
 		Queue:    queue,

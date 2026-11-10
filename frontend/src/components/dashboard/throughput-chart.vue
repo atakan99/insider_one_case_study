@@ -53,7 +53,7 @@ const tooltip = componentToString(config, ChartTooltipContent, { labelFormatter:
           <VisLine :x="x" :y="(d: ThroughputPoint) => d.sms" :color="colors[0]" />
           <VisLine :x="x" :y="(d: ThroughputPoint) => d.email" :color="colors[1]" />
           <VisLine :x="x" :y="(d: ThroughputPoint) => d.limit" :color="colors[2]" :line-dash-array="[4, 4]" />
-          <VisAxis type="x" :tick-format="formatTime" :num-ticks="6" :grid-line="false" />
+          <VisAxis type="x" :tick-format="formatTime" :num-ticks="6" :tick-text-hide-overlapping="true" :grid-line="false" />
           <VisAxis type="y" :num-ticks="4" />
           <ChartCrosshair :template="tooltip" :color="(_d: ThroughputPoint, i: number) => colors[i]" />
         </VisXYContainer>

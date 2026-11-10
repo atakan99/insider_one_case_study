@@ -123,6 +123,35 @@ describe('dashboard page', () => {
     w.unmount()
   })
 
+  it('shows the statistics while the health call is still pending', async () => {
+    getHealth.mockReturnValue(new Promise(() => {}))
+    const w = make()
+    await flushPromises()
+    expect(w.find('[data-row="sms"] [data-card="sent"]').text()).toContain('11')
+    expect(w.text()).not.toContain('System health')
+    w.unmount()
+  })
+
+  it('shows the health panel while the stats call is still pending', async () => {
+    getStats.mockReturnValue(new Promise(() => {}))
+    const w = make()
+    await flushPromises()
+    expect(w.text()).toContain('Loading')
+    expect(w.text()).toContain('System health')
+    w.unmount()
+  })
+
+  it('uses one grid column below lg and lets the cards shrink', async () => {
+    const w = make()
+    await flushPromises()
+    const grid = w.find('div[class~="lg:grid-cols-2"]')
+    expect(grid.classes()).toContain('grid-cols-1')
+    expect(grid.classes()).toContain('lg:grid-cols-2')
+    for (const child of grid.element.children)
+      expect(child.classList.contains('min-w-0')).toBe(true)
+    w.unmount()
+  })
+
   it('stops polling after unmount, also with a request in flight', async () => {
     let release: (v: DashboardStats) => void = () => {}
     getStats.mockReturnValue(new Promise((r) => {
