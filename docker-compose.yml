@@ -40,6 +40,8 @@ services:
     environment:
       DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      WORKER_URL: http://worker:8082
+      PROVIDER_URL: http://mock-provider:8081
       LLM_MODE: ${LLM_MODE:-mock}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       # Origins that may call the api from a browser (D-028).

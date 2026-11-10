@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/config"
+	"campaigncomposer/internal/dashboard"
 	"campaigncomposer/internal/delivery"
 	"campaigncomposer/internal/httpapi"
 	"campaigncomposer/internal/llm"
@@ -61,8 +65,17 @@ func run() error {
 		slog.Warn("initial db ping failed", "err", err)
 	}
 
+	// The client connects lazily, so a Redis outage does not stop the api.
+	redisOpt, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	rdb := redis.NewClient(redisOpt)
+	defer rdb.Close()
+	redisPing := dashboard.RedisPinger{Client: rdb}
+
 	mux := http.NewServeMux()
-	httpapi.RegisterHealth(mux, pool)
+	httpapi.RegisterHealth(mux, pool, redisPing)
 
 	llmClient, err := llm.New(cfg, mockDefault)
 	if err != nil {
@@ -97,24 +110,38 @@ func run() error {
 		Now: time.Now,
 	})
 
-	// The client connects lazily, so a Redis outage does not stop the api.
-	redisOpt, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
-		return err
-	}
-	rdb := redis.NewClient(redisOpt)
-	defer rdb.Close()
+	queue := delivery.NewQueue(rdb, "api")
 	httpapi.RegisterDelivery(mux, &delivery.Service{
 		Store: delivery.NewStore(pool),
-		Queue: delivery.NewQueue(rdb, "api"),
+		Queue: queue,
 		Now:   time.Now,
 		Log:   slog.Default(),
 	}, time.Second)
 
+	dash := dashboard.NewStore(pool)
+	httpapi.RegisterDashboard(mux, dash, &dashboard.Checker{
+		DB:          pool,
+		Redis:       redisPing,
+		Queue:       queue,
+		Store:       dash,
+		HTTP:        &http.Client{},
+		WorkerURL:   cfg.WorkerURL,
+		ProviderURL: cfg.ProviderURL,
+	}, time.Now)
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		dashboard.NewCollector(dash, slog.Default()),
+	)
+	metrics := httpapi.NewHTTPMetrics(reg)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
 	// No WriteTimeout: the content SSE stream can last 90 s (NFR-9).
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.CORS(cfg.CORSOrigins, mux),
+		Handler:           httpapi.CORS(cfg.CORSOrigins, metrics.Wrap(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
