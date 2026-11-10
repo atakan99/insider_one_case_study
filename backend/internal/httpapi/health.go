@@ -3,7 +3,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -39,10 +38,4 @@ func RegisterHealth(mux *http.ServeMux, db Pinger) {
 		}
 		writeJSON(w, http.StatusOK, healthBody{Status: "ok", DB: "ok"})
 	})
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
 }

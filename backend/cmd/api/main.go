@@ -15,6 +15,8 @@ import (
 
 	"campaigncomposer/internal/config"
 	"campaigncomposer/internal/httpapi"
+	"campaigncomposer/internal/llm"
+	"campaigncomposer/internal/segment"
 )
 
 const (
@@ -59,9 +61,24 @@ func run() error {
 	mux := http.NewServeMux()
 	httpapi.RegisterHealth(mux, pool)
 
+	llmClient, err := llm.New(cfg)
+	if err != nil {
+		return err
+	}
+	slog.Info("llm configured", "model", cfg.AnthropicModel, "llm_mode", cfg.LLMMode)
+	httpapi.RegisterSegments(mux, &httpapi.SegmentPreviewer{
+		LLM:   llmClient,
+		Allow: segment.Default(),
+		Count: func(ctx context.Context, w segment.Where) (segment.Audience, error) {
+			return segment.CountAudience(ctx, pool, w)
+		},
+		Now:        time.Now,
+		LLMTimeout: 20 * time.Second,
+	})
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           httpapi.CORS(cfg.CORSOrigins, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
