@@ -79,6 +79,9 @@ func run() error {
 		return fmt.Errorf("REDIS_URL: %w", err)
 	}
 
+	// Each consumer holds one connection while it waits in a blocking read.
+	opt.PoolSize = max(opt.PoolSize, 2*cfg.Consumers+16)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
