@@ -25,6 +25,9 @@ describe('app sidebar', () => {
     const text = wrapper.text()
 
     expect(text).toContain('Campaign Composer')
+    const first = wrapper.find('[data-sidebar="content"] a')
+    expect(first.attributes('href')).toBe('/dashboard')
+    expect(first.text()).toContain('Dashboard')
     expect(wrapper.find('[data-sidebar="content"] a[href="/campaigns/new"]').text()).toContain('New campaign')
     expect(wrapper.find('[data-sidebar="content"] a[href="/campaigns"]').text()).toContain('Campaigns')
     // No team switcher (a dropdown in the header) and no user menu (the footer).

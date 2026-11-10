@@ -1,10 +1,16 @@
-import { MegaphoneIcon, SquarePenIcon } from '@lucide/vue'
+import { LayoutDashboardIcon, MegaphoneIcon, SquarePenIcon } from '@lucide/vue'
 
 import type { NavGroup, NavItem } from '@/components/app-sidebar/types'
 
 type SidebarLink = Extract<NavItem, { url: string }>
 
 export const navData: NavGroup[] = [
+  {
+    title: 'Overview',
+    items: [
+      { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboardIcon },
+    ],
+  },
   {
     title: 'Campaigns',
     items: [

@@ -10,10 +10,17 @@ function makeRouter() {
 }
 
 describe('routes', () => {
-  it('redirects / to /campaigns/new', async () => {
+  it('redirects / to /dashboard', async () => {
     const router = makeRouter()
     await router.push('/')
-    expect(router.currentRoute.value.path).toBe('/campaigns/new')
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+  })
+
+  it('resolves /dashboard to the dashboard page', () => {
+    const resolved = makeRouter().resolve('/dashboard')
+    expect(resolved.name).toBe('/dashboard')
+    for (const record of resolved.matched)
+      expect([undefined, 'default']).toContain(record.meta.layout)
   })
 
   it.each([
@@ -31,7 +38,7 @@ describe('routes', () => {
     expect(makeRouter().resolve('/nope').name).toBe('/[...path]')
   })
 
-  it.each(['/dashboard', '/tasks', '/auth/sign-in', '/billing', '/settings'])(
+  it.each(['/tasks', '/auth/sign-in', '/billing', '/settings'])(
     'shows 404 for removed route %s',
     (path) => {
       expect(makeRouter().resolve(path).name).toBe('/[...path]')

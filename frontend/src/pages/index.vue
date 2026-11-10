@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePage({ redirect: '/campaigns/new' })
+definePage({ redirect: '/dashboard' })
 </script>
 
 <template>
