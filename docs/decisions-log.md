@@ -204,3 +204,38 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Count all nodes or only groups for the depth. Decide the node type from `op` or from `field`. Reject or ignore empty values for keys that do not apply. Detect duplicate keys or not.
 - **Choice:** The depth counts group levels. The root is level 1. A condition in a level 3 group is valid. A node with a `field` key is a condition. All other nodes are groups. A value of `null`, `""` or `[]` counts as absent for a key that does not apply to the status. A non-empty value for such a key fails. The validator does not detect duplicate JSON keys. The last one wins, and the validator still checks that value.
 - **Why:** The example rule has a condition in a level 2 group. A count of all nodes would reject a rule that the spec allows. The tool schema is flat. Thus the model can send empty values for keys that do not apply. A repair round for these would turn a true `unsupported` answer into `segment_invalid`. A duplicate key cannot add a field that the validator does not check, so it gives no way to attack.
+
+## D-030 One content call for each language, at the same time
+
+- **Context:** The audience can have more than one language (D-022). Claude writes the SMS and the email for each language.
+- **Options:** One call that returns all languages. One call for each language, in sequence. One call for each language, at the same time.
+- **Choice:** One call for each language, at the same time. Each call has its own validation and its own repair round.
+- **Why:** A short answer streams faster. A failure in one language does not stop the other languages. The prompt names one language, so Claude cannot mix them.
+
+## D-031 The limit check uses the longest first name of the audience
+
+- **Context:** The SMS and subject limits apply after `{{first_name}}` is filled in. At generation time, the backend does not render a message for each user.
+- **Options:** Use a fixed name length. Render for each recipient. Use the longest first name of the language audience.
+- **Choice:** The audience query gives the maximum `char_length(first_name)` for each language, for users with consent on one or more channels. The validator renders each field with a name of that length. The send slice checks each rendered message again.
+- **Why:** If the longest name fits, each name fits. The check needs one aggregate value and no user row.
+
+## D-032 The frontend sends the rule back, and the backend validates it again
+
+- **Context:** Slice 04 stores no rule. The content endpoint needs the rule to calculate the languages and the longest first name.
+- **Options:** Store the preview result on the server and send an id. Send the rule back from the browser.
+- **Choice:** The browser sends the brief and the rule. The backend runs the slice 04 validator and the audience query again.
+- **Why:** No new storage before slice 06. The validator is the gate, so a changed rule from the browser cannot get past the allowlist.
+
+## D-033 Eager tool streaming for content, and the validator stays the gate
+
+- **Context:** The case asks that the content streams onto the page. By default the API buffers each tool parameter, so the text arrives in one piece.
+- **Options:** Stream plain text and parse it. Stream the tool input with `eager_input_streaming: true`.
+- **Choice:** The tool `submit_content` has `eager_input_streaming: true` and `strict: true`. The backend parses the partial JSON for the drafts and validates the final input. If the API rejects the pair, the live stream stays and `strict` goes. A tool input that is not valid JSON is replayed as `{}` in the repair round. After a `fallback` block, the backend uses only the tool call after that block.
+- **Why:** The tool keeps the answer structured, and the drafts stream. With eager streaming the API does not validate the input, but the backend validator always checks it.
+
+## D-034 The mock gets its default answers from cmd/api
+
+- **Context:** One mock client serves the segment and the content endpoints. `internal/llm` must not import other `internal/` packages.
+- **Options:** Copy the content into `internal/llm`. Add a language field to `llm.Request`. Inject a default function from `cmd/api`.
+- **Choice:** `cmd/api` gives the mock a function that selects the answer from the tool name. `internal/content` owns the default content and reads the language from its own user message.
+- **Why:** Each package keeps its own data. `llm.Request` gets no field that only the mock uses.
