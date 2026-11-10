@@ -11,9 +11,12 @@ func env(m map[string]string) func(string) string {
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	cfg, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	cfg, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x", "REDIS_URL": "redis://r"}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RedisURL != "redis://r" {
+		t.Errorf("RedisURL = %q, want %q", cfg.RedisURL, "redis://r")
 	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("HTTPAddr = %q, want %q", cfg.HTTPAddr, ":8080")
@@ -36,6 +39,7 @@ func TestLoad_MissingDatabaseURL(t *testing.T) {
 func TestLoad_AnthropicWithoutKey(t *testing.T) {
 	_, err := Load(env(map[string]string{
 		"DATABASE_URL": "postgres://x",
+		"REDIS_URL":    "redis://r",
 		"LLM_MODE":     "anthropic",
 	}))
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
@@ -46,6 +50,7 @@ func TestLoad_AnthropicWithoutKey(t *testing.T) {
 func TestLoad_InvalidLLMMode(t *testing.T) {
 	_, err := Load(env(map[string]string{
 		"DATABASE_URL": "postgres://x",
+		"REDIS_URL":    "redis://r",
 		"LLM_MODE":     "gpt",
 	}))
 	if err == nil || !strings.Contains(err.Error(), "LLM_MODE") {
@@ -177,7 +182,7 @@ func TestLoadMockProvider_Errors(t *testing.T) {
 }
 
 func TestLoad_LLMSettings(t *testing.T) {
-	cfg, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	cfg, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x", "REDIS_URL": "redis://r"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +196,7 @@ func TestLoad_LLMSettings(t *testing.T) {
 
 	cfg, err = Load(env(map[string]string{
 		"DATABASE_URL":      "postgres://x",
+		"REDIS_URL":         "redis://r",
 		"LLM_MODE":          "anthropic",
 		"ANTHROPIC_API_KEY": "test-key",
 		"ANTHROPIC_MODEL":   "claude-sonnet-5-5",
@@ -205,5 +211,82 @@ func TestLoad_LLMSettings(t *testing.T) {
 	want = []string{"https://a.example", "https://b.example"}
 	if strings.Join(cfg.CORSOrigins, "|") != strings.Join(want, "|") {
 		t.Errorf("CORSOrigins = %v, want %v", cfg.CORSOrigins, want)
+	}
+}
+
+func TestLoad_RedisURLRequired(t *testing.T) {
+	_, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("err = %v, want error that mentions REDIS_URL", err)
+	}
+}
+
+func workerEnv(extra map[string]string) func(string) string {
+	m := map[string]string{
+		"DATABASE_URL": "postgres://x",
+		"REDIS_URL":    "redis://r",
+		"PROVIDER_URL": "http://p",
+	}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return env(m)
+}
+
+func TestLoadWorker_Defaults(t *testing.T) {
+	cfg, err := LoadWorker(workerEnv(nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := WorkerConfig{
+		HTTPAddr: ":8082", DatabaseURL: "postgres://x", RedisURL: "redis://r", ProviderURL: "http://p",
+		RatePerSec: 100, MaxAttempts: 5, Consumers: 32, Timeout: 3 * time.Second,
+	}
+	if cfg != want {
+		t.Errorf("cfg = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestLoadWorker_Overrides(t *testing.T) {
+	cfg, err := LoadWorker(workerEnv(map[string]string{
+		"HTTP_ADDR": ":9", "SEND_RATE_PER_SEC": "1", "SEND_MAX_ATTEMPTS": "10",
+		"SEND_CONSUMERS": "256", "SEND_TIMEOUT": "500ms",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.HTTPAddr != ":9" || cfg.RatePerSec != 1 || cfg.MaxAttempts != 10 || cfg.Consumers != 256 || cfg.Timeout != 500*time.Millisecond {
+		t.Errorf("cfg = %+v", cfg)
+	}
+}
+
+func TestLoadWorker_Errors(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want []string
+	}{
+		{"missing urls", map[string]string{}, []string{"DATABASE_URL", "REDIS_URL", "PROVIDER_URL"}},
+		{"rate 0", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_RATE_PER_SEC": "0"}, []string{"SEND_RATE_PER_SEC"}},
+		{"rate 101", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_RATE_PER_SEC": "101"}, []string{"SEND_RATE_PER_SEC"}},
+		{"attempts 11", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_MAX_ATTEMPTS": "11"}, []string{"SEND_MAX_ATTEMPTS"}},
+		{"consumers 0", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_CONSUMERS": "0"}, []string{"SEND_CONSUMERS"}},
+		{"timeout abc", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_TIMEOUT": "abc"}, []string{"SEND_TIMEOUT"}},
+		{"timeout 0s", map[string]string{"DATABASE_URL": "a", "REDIS_URL": "b", "PROVIDER_URL": "c", "SEND_TIMEOUT": "0s"}, []string{"SEND_TIMEOUT"}},
+		{"all", map[string]string{"SEND_RATE_PER_SEC": "x", "SEND_MAX_ATTEMPTS": "0", "SEND_CONSUMERS": "257", "SEND_TIMEOUT": "-1s"},
+			[]string{"DATABASE_URL", "REDIS_URL", "PROVIDER_URL", "SEND_RATE_PER_SEC", "SEND_MAX_ATTEMPTS", "SEND_CONSUMERS", "SEND_TIMEOUT"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadWorker(env(tc.env))
+			if err == nil {
+				t.Fatal("want error")
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("err = %v, want mention of %s", err, w)
+				}
+			}
+		})
 	}
 }

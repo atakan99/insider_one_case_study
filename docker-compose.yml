@@ -39,6 +39,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
       LLM_MODE: ${LLM_MODE:-mock}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       # Origins that may call the api from a browser (D-028).
@@ -46,6 +47,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       # The api starts after the seed applies the migrations (D-015).

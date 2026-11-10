@@ -18,8 +18,10 @@ const (
 
 // Config holds the settings that the api process reads at startup.
 type Config struct {
-	HTTPAddr        string
-	DatabaseURL     string
+	HTTPAddr    string
+	DatabaseURL string
+	// RedisURL is REDIS_URL. It is required.
+	RedisURL        string
 	LLMMode         string
 	AnthropicAPIKey string
 	// AnthropicModel is ANTHROPIC_MODEL. The default is claude-opus-5-5.
@@ -34,6 +36,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		HTTPAddr:        getenv("HTTP_ADDR"),
 		DatabaseURL:     getenv("DATABASE_URL"),
+		RedisURL:        getenv("REDIS_URL"),
 		LLMMode:         getenv("LLM_MODE"),
 		AnthropicAPIKey: getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:  getenv("ANTHROPIC_MODEL"),
@@ -60,6 +63,9 @@ func Load(getenv func(string) string) (Config, error) {
 	var errs []error
 	if cfg.DatabaseURL == "" {
 		errs = append(errs, errors.New("DATABASE_URL is required"))
+	}
+	if cfg.RedisURL == "" {
+		errs = append(errs, errors.New("REDIS_URL is required"))
 	}
 	switch cfg.LLMMode {
 	case LLMModeMock:
@@ -223,6 +229,81 @@ func LoadMockProvider(getenv func(string) string) (MockProviderConfig, error) {
 	}
 	if len(errs) > 0 {
 		return MockProviderConfig{}, errors.Join(errs...)
+	}
+	return cfg, nil
+}
+
+// WorkerConfig holds the settings that the worker process reads at startup.
+type WorkerConfig struct {
+	HTTPAddr    string
+	DatabaseURL string
+	RedisURL    string
+	ProviderURL string
+	// RatePerSec is SEND_RATE_PER_SEC, the send rate of all consumers together.
+	RatePerSec int
+	// MaxAttempts is SEND_MAX_ATTEMPTS, the number of provider calls for one job.
+	MaxAttempts int
+	// Consumers is SEND_CONSUMERS, the number of goroutines that send.
+	Consumers int
+	// Timeout is SEND_TIMEOUT, the timeout of one provider call.
+	Timeout time.Duration
+}
+
+// LoadWorker reads the worker config through getenv.
+func LoadWorker(getenv func(string) string) (WorkerConfig, error) {
+	cfg := WorkerConfig{
+		HTTPAddr:    getenv("HTTP_ADDR"),
+		DatabaseURL: getenv("DATABASE_URL"),
+		RedisURL:    getenv("REDIS_URL"),
+		ProviderURL: getenv("PROVIDER_URL"),
+		RatePerSec:  100,
+		MaxAttempts: 5,
+		Consumers:   32,
+		Timeout:     3 * time.Second,
+	}
+	if cfg.HTTPAddr == "" {
+		cfg.HTTPAddr = ":8082"
+	}
+	var errs []error
+	for _, r := range []struct{ key, val string }{
+		{"DATABASE_URL", cfg.DatabaseURL},
+		{"REDIS_URL", cfg.RedisURL},
+		{"PROVIDER_URL", cfg.ProviderURL},
+	} {
+		if r.val == "" {
+			errs = append(errs, fmt.Errorf("%s is required", r.key))
+		}
+	}
+	for _, r := range []struct {
+		key      string
+		min, max int
+		dst      *int
+	}{
+		{"SEND_RATE_PER_SEC", 1, 100, &cfg.RatePerSec},
+		{"SEND_MAX_ATTEMPTS", 1, 10, &cfg.MaxAttempts},
+		{"SEND_CONSUMERS", 1, 256, &cfg.Consumers},
+	} {
+		v := getenv(r.key)
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < r.min || n > r.max {
+			errs = append(errs, fmt.Errorf("%s must be an integer from %d to %d, got %q", r.key, r.min, r.max, v))
+			continue
+		}
+		*r.dst = n
+	}
+	if v := getenv("SEND_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			errs = append(errs, fmt.Errorf("SEND_TIMEOUT must be a duration above 0, for example 3s, got %q", v))
+		} else {
+			cfg.Timeout = d
+		}
+	}
+	if len(errs) > 0 {
+		return WorkerConfig{}, errors.Join(errs...)
 	}
 	return cfg, nil
 }
