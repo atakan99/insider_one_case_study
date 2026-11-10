@@ -30,16 +30,16 @@ defineProps<{ campaigns: DashboardStats['campaigns'] }>()
               <TableHead>Campaign</TableHead>
               <TableHead>Status</TableHead>
               <TableHead class="text-right">
-                Total
+                Send jobs
               </TableHead>
               <TableHead class="text-right">
-                Sent
+                Sent %
               </TableHead>
               <TableHead class="text-right">
-                Failed
+                Failed %
               </TableHead>
               <TableHead class="text-right">
-                Success rate
+                Unknown %
               </TableHead>
               <TableHead class="text-right">
                 Duration
@@ -50,7 +50,7 @@ defineProps<{ campaigns: DashboardStats['campaigns'] }>()
             <TableRow v-for="c in campaigns" :key="c.id">
               <TableCell class="max-w-64 truncate">
                 <RouterLink :to="`/campaigns/${c.id}`" class="underline-offset-4 hover:underline">
-                  {{ c.description }}
+                  #{{ c.id }} {{ c.description }}
                 </RouterLink>
               </TableCell>
               <TableCell>
@@ -60,13 +60,13 @@ defineProps<{ campaigns: DashboardStats['campaigns'] }>()
                 {{ c.total }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ c.sent }}
+                {{ percent(c.sent, c.total) }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ c.failed }}
+                {{ percent(c.failed, c.total) }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ percent(c.sent, c.sent + c.failed + c.unknown) }}
+                {{ percent(c.unknown, c.total) }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
                 {{ formatDuration(c.duration_ms) }}

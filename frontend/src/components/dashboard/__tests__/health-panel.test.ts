@@ -24,7 +24,7 @@ describe('health panel', () => {
   it('shows two stream rows and a dash for null', () => {
     const w = mount(HealthPanel, { props: { health } })
     expect(w.findAll('[data-stream]')).toHaveLength(2)
-    expect(w.find('[data-stream="sms"]').text()).toContain('12')
+    expect(w.find('[data-stream="sms"]').text()).toContain('Length: 12')
     expect(w.find('[data-stream="email"]').text()).toContain('–')
   })
 })

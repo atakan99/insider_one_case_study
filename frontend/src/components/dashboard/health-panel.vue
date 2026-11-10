@@ -37,7 +37,7 @@ const num = (v: number | null) => (v === null ? '–' : String(v))
       <div class="space-y-1 text-sm">
         <div v-for="s in health.streams" :key="s.channel" :data-stream="s.channel" class="flex flex-wrap gap-x-4">
           <span class="w-14 font-medium uppercase">{{ s.channel }}</span>
-          <span>Queue: <span class="tabular-nums">{{ num(s.length) }}</span></span>
+          <span>Length: <span class="tabular-nums">{{ num(s.length) }}</span></span>
           <span>Pending: <span class="tabular-nums">{{ num(s.pending) }}</span></span>
           <span>In progress: <span class="tabular-nums">{{ s.in_progress }}</span></span>
         </div>
