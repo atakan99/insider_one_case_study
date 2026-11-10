@@ -5,8 +5,8 @@ import { useRouter } from 'vue-router'
 import type { CampaignSummary } from '@/lib/campaigns'
 
 import ReviewDialog from '@/components/campaign/review-dialog.vue'
+import StatusBadge from '@/components/campaign/status-badge.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -55,7 +55,7 @@ function onReviewOpen(v: boolean) {
 }
 
 function onApproved(id: number) {
-  router.push(`/campaigns/${id}`)
+  router.push(`/campaigns/${id}?sending=1`)
 }
 </script>
 
@@ -66,7 +66,7 @@ function onApproved(id: number) {
         Campaigns
       </h1>
       <p class="text-muted-foreground">
-        Drafts wait for your review. Approved campaigns are ready to send.
+        Drafts wait for your review. Approved campaigns are sent in the background.
       </p>
     </div>
 
@@ -117,9 +117,7 @@ function onApproved(id: number) {
               </TableCell>
               <TableCell>{{ languages(c) }}</TableCell>
               <TableCell>
-                <Badge :variant="c.status === 'draft' ? 'outline' : 'default'">
-                  {{ c.status === 'draft' ? 'Draft' : 'Approved' }}
-                </Badge>
+                <StatusBadge :status="c.status" />
               </TableCell>
               <TableCell class="text-muted-foreground">
                 {{ when(c.created_at) }}
@@ -141,9 +139,7 @@ function onApproved(id: number) {
           <CardContent class="space-y-2 px-4">
             <div class="flex items-center justify-between gap-2">
               <span class="font-medium tabular-nums">#{{ c.id }}</span>
-              <Badge :variant="c.status === 'draft' ? 'outline' : 'default'">
-                {{ c.status === 'draft' ? 'Draft' : 'Approved' }}
-              </Badge>
+              <StatusBadge :status="c.status" />
             </div>
             <p class="text-sm break-words">
               {{ c.description }}

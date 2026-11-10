@@ -59,6 +59,24 @@ describe('campaigns page', () => {
     expect(rows[1]!.text()).toContain('Approved')
   })
 
+  it('shows the five status badges', async () => {
+    const base = { description: 'd', languages: ['tr'], created_at: '2026-11-09T12:00:00Z', approved_at: null }
+    list.mockResolvedValue([
+      { id: 5, status: 'completed', ...base },
+      { id: 4, status: 'sending', ...base },
+      { id: 3, status: 'queued', ...base },
+      { id: 2, status: 'approved', ...base },
+      { id: 1, status: 'draft', ...base },
+    ])
+    const w = make()
+    await flushPromises()
+    const rows = w.findAll('[data-test="campaign-row"]')
+    expect(rows.map(r => r.find('[data-status]').text())).toEqual(['Completed', 'Sending', 'Queued', 'Approved', 'Draft'])
+    await rows[0]!.trigger('click')
+    expect(push).toHaveBeenCalledWith('/campaigns/5')
+    expect(w.find('[data-test="review-stub"]').exists()).toBe(false)
+  })
+
   it('a draft opens the review window, an approved campaign opens its page', async () => {
     list.mockResolvedValue([
       { id: 2, status: 'draft', description: 'd', languages: ['tr'], created_at: '2026-11-10T12:00:00Z', approved_at: null },
@@ -79,7 +97,7 @@ describe('campaigns page', () => {
     await w.find('[data-test="campaign-row"]').trigger('click')
     await w.find('[data-test="stub-approve"]').trigger('click')
     await flushPromises()
-    expect(push).toHaveBeenCalledWith('/campaigns/2')
+    expect(push).toHaveBeenCalledWith('/campaigns/2?sending=1')
   })
 
   it('reloads after the window closes', async () => {

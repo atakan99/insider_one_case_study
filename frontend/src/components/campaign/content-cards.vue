@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
       v-if="campaignId !== null"
       v-model:open="reviewOpen"
       :campaign-id="campaignId"
-      @approved="id => router.push(`/campaigns/${id}`)"
+      @approved="id => router.push(`/campaigns/${id}?sending=1`)"
     />
   </div>
 </template>

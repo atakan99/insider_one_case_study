@@ -2,7 +2,7 @@ import type { Content } from '@/lib/content'
 
 import { apiFetch } from '@/lib/api-client'
 
-export type CampaignStatus = 'draft' | 'approved'
+export type CampaignStatus = 'draft' | 'approved' | 'queued' | 'sending' | 'completed'
 export interface LanguageContent extends Content { language: string, sms_count: number, email_count: number, first_name_runes: number }
 export interface Campaign {
   id: number

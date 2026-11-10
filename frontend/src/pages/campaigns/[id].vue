@@ -1,22 +1,30 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import type { Campaign } from '@/lib/campaigns'
+import type { Progress } from '@/lib/delivery'
 
+import DeliverySection from '@/components/campaign/delivery-section.vue'
 import ReviewDialog from '@/components/campaign/review-dialog.vue'
+import SendingDialog from '@/components/campaign/sending-dialog.vue'
+import StatusBadge from '@/components/campaign/status-badge.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CampaignRequestError, getCampaign, languageName } from '@/lib/campaigns'
+import { getProgress } from '@/lib/delivery'
 
 const route = useRoute('/campaigns/[id]')
+const router = useRouter()
 const id = computed(() => Number(route.params.id))
 const campaign = ref<Campaign | null>(null)
 const notFound = ref(false)
 const error = ref('')
 const reviewOpen = ref(false)
+const sendingOpen = ref(false)
+const progress = ref<Progress | null>(null)
+const deliveryEl = ref<HTMLElement | null>(null)
 
 const fmt = (n: number) => n.toLocaleString('en-US')
 
@@ -28,7 +36,11 @@ async function load() {
     return
   }
   try {
-    campaign.value = await getCampaign(id.value)
+    const c = await getCampaign(id.value)
+    campaign.value = c
+    progress.value = null
+    if (c.status !== 'draft')
+      progress.value = await getProgress(id.value)
   }
   catch (err) {
     if (err instanceof CampaignRequestError && (err.status === 404 || err.status === 400))
@@ -39,6 +51,30 @@ async function load() {
 }
 
 watch(id, load, { immediate: true })
+
+// The approval routes here with ?sending=1. Open the window once, then drop the query.
+watch(() => route.query.sending, async (v) => {
+  if (v !== '1')
+    return
+  sendingOpen.value = true
+  await router.replace({ query: {} })
+  if (campaign.value)
+    await load()
+}, { immediate: true })
+
+function onApproved(approvedId: number) {
+  void router.push(`/campaigns/${approvedId}?sending=1`)
+}
+
+function onRetried(p: Progress) {
+  progress.value = p
+  sendingOpen.value = true
+}
+
+async function showList() {
+  await nextTick()
+  deliveryEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 function onReviewOpen(v: boolean) {
   reviewOpen.value = v
@@ -71,9 +107,7 @@ function onReviewOpen(v: boolean) {
             <h1 class="text-2xl font-bold tracking-tight">
               Campaign #{{ campaign.id }}
             </h1>
-            <Badge :variant="campaign.status === 'draft' ? 'outline' : 'default'">
-              {{ campaign.status === 'draft' ? 'Draft' : 'Approved' }}
-            </Badge>
+            <StatusBadge :status="campaign.status" />
           </div>
           <p class="text-muted-foreground break-words">
             {{ campaign.description }}
@@ -84,9 +118,6 @@ function onReviewOpen(v: boolean) {
         </Button>
       </div>
 
-      <p v-if="campaign.status === 'approved'" class="text-muted-foreground text-sm">
-        Sending starts in a later step.
-      </p>
       <p v-for="s in campaign.skipped_languages" :key="s" class="text-muted-foreground text-sm">
         {{ languageName(s) }} skipped: content failed.
       </p>
@@ -126,12 +157,28 @@ function onReviewOpen(v: boolean) {
         </CardContent>
       </Card>
 
+      <div v-if="progress" ref="deliveryEl" class="scroll-mt-4">
+        <DeliverySection
+          :campaign-id="campaign.id"
+          :progress="progress"
+          @view-progress="sendingOpen = true"
+          @retried="onRetried"
+        />
+      </div>
+
+      <SendingDialog
+        v-if="campaign.status !== 'draft'"
+        v-model:open="sendingOpen"
+        :campaign-id="campaign.id"
+        @open-list="showList"
+      />
+
       <ReviewDialog
         v-if="campaign.status === 'draft'"
         :open="reviewOpen"
         :campaign-id="campaign.id"
         @update:open="onReviewOpen"
-        @approved="load"
+        @approved="onApproved"
       />
     </template>
   </div>

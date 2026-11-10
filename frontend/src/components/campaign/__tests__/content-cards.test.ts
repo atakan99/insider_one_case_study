@@ -241,7 +241,7 @@ describe('content cards', () => {
     await btn().trigger('click')
     expect(w.find('[data-test="review-stub"]').attributes('data-id')).toBe('7')
     await w.find('[data-test="stub-approve"]').trigger('click')
-    expect(push).toHaveBeenCalledWith('/campaigns/7')
+    expect(push).toHaveBeenCalledWith('/campaigns/7?sending=1')
   })
 
   it('no review button without a campaign event', async () => {
