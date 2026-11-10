@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/config"
+	"campaigncomposer/internal/delivery"
 	"campaigncomposer/internal/httpapi"
 	"campaigncomposer/internal/llm"
 	"campaigncomposer/internal/segment"
@@ -94,6 +96,20 @@ func run() error {
 		},
 		Now: time.Now,
 	})
+
+	// The client connects lazily, so a Redis outage does not stop the api.
+	redisOpt, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	rdb := redis.NewClient(redisOpt)
+	defer rdb.Close()
+	httpapi.RegisterDelivery(mux, &delivery.Service{
+		Store: delivery.NewStore(pool),
+		Queue: delivery.NewQueue(rdb, "api"),
+		Now:   time.Now,
+		Log:   slog.Default(),
+	}, time.Second)
 
 	// No WriteTimeout: the content SSE stream can last 90 s (NFR-9).
 	srv := &http.Server{
