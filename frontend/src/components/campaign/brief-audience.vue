@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { apiErrorMessage, previewSegment } from '@/lib/segments'
 
+import ContentCards from './content-cards.vue'
+
 const MAX_BRIEF = 1000
 
 const brief = ref('')
@@ -20,10 +22,24 @@ const pending = computed(() => mutation.isPending.value)
 const result = computed(() => (mutation.isError.value ? undefined : mutation.data.value))
 const errorMessage = computed(() => (mutation.isError.value ? apiErrorMessage(mutation.error.value) : ''))
 
+const runId = ref(0)
+const running = ref(false)
+const contentBrief = ref('')
+const contentRule = ref<unknown>(null)
+
 function submit() {
-  if (!canSubmit.value || pending.value)
+  if (!canSubmit.value || pending.value || running.value)
     return
-  mutation.mutate(brief.value)
+  const sent = brief.value
+  mutation.mutate(sent, {
+    onSuccess: (data) => {
+      if (data.audience.languages.length === 0)
+        return
+      contentBrief.value = sent
+      contentRule.value = data.rule
+      runId.value++
+    },
+  })
 }
 </script>
 
@@ -40,7 +56,7 @@ function submit() {
         <span class="text-sm" :class="length > MAX_BRIEF ? 'text-destructive' : 'text-muted-foreground'">
           {{ length }} / {{ MAX_BRIEF }}
         </span>
-        <Button :disabled="!canSubmit || pending" @click="submit">
+        <Button :disabled="!canSubmit || pending || running" @click="submit">
           Find audience
         </Button>
       </div>
@@ -143,5 +159,13 @@ function submit() {
         </Alert>
       </CardContent>
     </Card>
+
+    <ContentCards
+      v-if="runId > 0"
+      :brief="contentBrief"
+      :rule="contentRule"
+      :run-id="runId"
+      @update:running="running = $event"
+    />
   </div>
 </template>

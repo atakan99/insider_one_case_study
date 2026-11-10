@@ -9,7 +9,7 @@ import BriefAudience from '@/components/campaign/brief-audience.vue'
         New campaign
       </h1>
       <p class="text-muted-foreground">
-        Write a brief. Claude finds the audience.
+        Write a brief. Claude finds the audience and writes the messages.
       </p>
     </div>
     <BriefAudience />

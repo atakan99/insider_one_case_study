@@ -6,10 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SegmentPreview } from '@/lib/segments'
 
+import { generateContent } from '@/lib/content'
 import { previewSegment } from '@/lib/segments'
 
 import BriefAudience from '../brief-audience.vue'
 
+vi.mock('@/lib/content', () => ({ generateContent: vi.fn(() => new Promise(() => {})), ContentRequestError: class extends Error {} }))
 vi.mock('@/lib/segments', () => ({
   previewSegment: vi.fn(),
   apiErrorMessage: (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong. Try again.'),
@@ -39,6 +41,8 @@ function make() {
 describe('brief audience', () => {
   beforeEach(() => {
     vi.mocked(previewSegment).mockReset()
+    vi.mocked(generateContent).mockReset()
+    vi.mocked(generateContent).mockImplementation(() => new Promise(() => {}))
   })
 
   it('labels the button Find audience', () => {
@@ -107,6 +111,7 @@ describe('brief audience', () => {
   })
 
   it('replaces the first result with the second', async () => {
+    vi.mocked(generateContent).mockResolvedValue(undefined)
     vi.mocked(previewSegment).mockResolvedValueOnce(preview({ description: 'First result' }))
     vi.mocked(previewSegment).mockResolvedValueOnce(preview({ description: 'Second result' }))
     const w = make()
@@ -117,5 +122,36 @@ describe('brief audience', () => {
     await flushPromises()
     expect(w.text()).toContain('Second result')
     expect(w.text()).not.toContain('First result')
+  })
+
+  it('starts content generation after a result with languages', async () => {
+    vi.mocked(previewSegment).mockResolvedValue(preview({ rule: { r: 1 } }))
+    const w = make()
+    await w.find('textarea').setValue('brief')
+    await w.find('button').trigger('click')
+    await flushPromises()
+    expect(generateContent).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(generateContent).mock.calls[0]![0]).toBe('brief')
+    expect(vi.mocked(generateContent).mock.calls[0]![1]).toEqual({ r: 1 })
+    expect(w.text()).toContain('Generating content…')
+  })
+
+  it('turns Find audience off while content runs', async () => {
+    vi.mocked(previewSegment).mockResolvedValue(preview())
+    const w = make()
+    await w.find('textarea').setValue('brief')
+    await w.find('button').trigger('click')
+    await flushPromises()
+    expect(w.find('button').text()).toBe('Find audience')
+    expect(w.find('button').attributes('disabled')).toBeDefined()
+  })
+
+  it('does not start content for a result with no languages', async () => {
+    vi.mocked(previewSegment).mockResolvedValue(preview({ audience: { ...preview().audience, languages: [] } }))
+    const w = make()
+    await w.find('textarea').setValue('brief')
+    await w.find('button').trigger('click')
+    await flushPromises()
+    expect(generateContent).not.toHaveBeenCalled()
   })
 })

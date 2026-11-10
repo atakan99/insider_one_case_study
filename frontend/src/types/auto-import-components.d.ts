@@ -17,6 +17,7 @@ declare module 'vue' {
     AppSidebarNavTeamCollapsible: typeof import('./../components/app-sidebar/nav-team-collapsible.vue')['default']
     AppSidebarNavTeamVercel: typeof import('./../components/app-sidebar/nav-team-vercel.vue')['default']
     CampaignBriefAudience: typeof import('./../components/campaign/brief-audience.vue')['default']
+    CampaignContentCards: typeof import('./../components/campaign/content-cards.vue')['default']
     CommandMenuPanel: typeof import('./../components/command-menu-panel/index.vue')['default']
     CommandMenuPanelCommandChangeTheme: typeof import('./../components/command-menu-panel/command-change-theme.vue')['default']
     CommandMenuPanelCommandItemHasIcon: typeof import('./../components/command-menu-panel/command-item-has-icon.vue')['default']
