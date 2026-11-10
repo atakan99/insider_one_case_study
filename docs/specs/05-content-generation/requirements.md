@@ -12,7 +12,7 @@ Read `goal.md` first. This file lists the checks that the result must pass.
 - **FR-6.** The backend makes one LLM call for each language in the audience. A rule with `country` in `[TR, US]` gives calls for `tr` and `en`. Each request names its language in the user message.
 - **FR-7.** The variable parser accepts zero, one or more `{{first_name}}`. It rejects `{{last_name}}`, `{{ first_name }}`, `{{first_name}`, a single `{{` and a single `}}`. A table test covers each case.
 - **FR-8.** The renderer replaces each `{{first_name}}` with the given name. Text with no variable stays the same. It does no HTML escaping.
-- **FR-9.** The validator counts runes after rendering with the longest first name. The test uses a longest name of 20 runes. An SMS of 153 runes with one `{{first_name}}` (13 runes) renders to 160 runes and passes. An SMS of 154 runes with one variable renders to 161 and fails. The subject passes at 80 rendered runes and fails at 81. Turkish characters, for example `ş`, count as 1.
+- **FR-9.** The validator counts runes after rendering with the longest first name. The test uses a longest name of 20 runes. An SMS of 154 runes with one `{{first_name}}` (14 runes) renders to 160 runes and passes. An SMS of 155 runes with one variable renders to 161 and fails. The subject passes at 80 rendered runes and fails at 81. Turkish characters, for example `ş`, count as 1.
 - **FR-10.** The validator rejects each case in "Validation". A table test has one or more cases for each row. The cases include these:
   - an unknown key, a missing field, and an empty field after trim
   - a `\n` in the subject, and a control character

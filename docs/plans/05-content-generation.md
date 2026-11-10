@@ -96,7 +96,7 @@ func Validate(raw []byte, firstNameRunes int) (Content, Limits, []FieldError)
 - [ ] **Step 1: Write the failing tests**
   - `TestParseVars` (table): `""` → 0. `"Hi {{first_name}}"` → 1. Two variables → 2. Errors for `{{last_name}}`, `{{ first_name }}`, `{{first_name}`, `{{`, `}}`, `{first_name}`, `{{FirstName}}`, `a { b`.
   - `TestRender`: one and two variables, no variable, a name with `<b>` stays as written.
-  - `TestValidate_Limits` with `firstNameRunes` 20: SMS of 153 runes with one variable passes (160 rendered). 154 runes fails with the message `161 runes after rendering, limit 160`. Subject at 80 rendered passes, 81 fails. Body at 2,000 passes, 2,001 fails. A field of `ş` runes counts each `ş` as 1.
+  - `TestValidate_Limits` with `firstNameRunes` 20: SMS of 154 runes with one variable passes (160 rendered). 155 runes fails with the message `161 runes after rendering, limit 160`. Subject at 80 rendered passes, 81 fails. Body at 2,000 passes, 2,001 fails. A field of `ş` runes counts each `ş` as 1.
   - `TestValidate_Cases` (table, one or more for each row of "Validation" in the spec): unknown key, missing field, a number for a field, empty after trim, `\n` in the subject, `\x07` in the SMS, `\t` in the body passes, `<b>` in each field, `</a>`, `<!--`, `a < b` passes, data after the object, not an object.
   - `TestValidate_AllErrors`: an input with three bad fields gives three errors with paths `sms`, `email_subject`, `email_body`.
   - `TestValidate_Trim`: leading and trailing spaces are gone in the returned `Content`. `Limits` has the rendered counts.
