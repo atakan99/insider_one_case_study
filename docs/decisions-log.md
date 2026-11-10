@@ -470,3 +470,108 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Reopen the stream after an error or the 30-minute close. Poll until the campaign is `completed`.
 - **Choice:** After a stream error or the 30-minute close, the page polls `GET .../progress` every 2 s until the status is `completed`. It does not reopen the stream. This differs from `goal.md`, which says "The page opens it again".
 - **Why:** One fallback path is simpler than a reconnect loop. The polled data is the same as the stream data. The cost is one request every 2 s for a campaign that runs longer than 30 minutes.
+
+## D-068 `/` goes to `/dashboard`
+
+- **Context:** Before slice 08, `/` went to `/campaigns/new`. The case brief names a dashboard as the place for the delivery status.
+- **Options:** Keep `/campaigns/new`. Go to `/dashboard`.
+- **Choice:** `/` goes to `/dashboard`. The sidebar lists "Dashboard" first.
+- **Why:** The reviewer sees the statistics first.
+
+## D-069 Two dashboard endpoints
+
+- **Context:** The page needs statistics and the live state of the services. A health check waits up to 1 s for a service that does not answer.
+- **Options:** One endpoint for all data. Two endpoints, `stats` and `health`.
+- **Choice:** `GET /api/dashboard/stats` and `GET /api/dashboard/health`. `health` checks the four services at the same time, each with a timeout of 1 s. It returns `200` also when a service is `down`.
+- **Why:** A slow health check does not delay the statistics. The body tells the state, so the page can show a `down` badge.
+
+## D-070 The dashboard polls every 5 s
+
+- **Context:** The totals change while a campaign runs. Slice 07 uses Server-Sent Events for one campaign.
+- **Options:** Server-Sent Events. Polling every 5 s.
+- **Choice:** The page polls both endpoints at once every 5 s. It stops while the tab is hidden and polls again when the tab shows.
+- **Why:** Polling is simple. A delay of 5 s is enough for totals.
+
+## D-071 Throughput uses 5-second buckets
+
+- **Context:** The chart must show that the worker keeps each channel at 100 messages per second or fewer.
+- **Options:** Buckets of 1 minute. Buckets of 5 seconds.
+- **Choice:** 120 buckets of 5 s cover the last 10 minutes. A bucket value is the count of `sent_at` in the bucket divided by 5.
+- **Why:** A short campaign still shows its peak rate. A bucket of 1 minute hides the peak.
+
+## D-072 A failure reason is the status and `last_error`
+
+- **Context:** The failure card must show why messages did not go out.
+- **Options:** Parse `last_error` into codes. Use the pair of delivery status and `last_error`.
+- **Choice:** One row is one pair of status and `last_error`. The worker writes a short, fixed text there.
+- **Why:** No parse is necessary.
+
+## D-073 `/metrics` uses `prometheus/client_golang`
+
+- **Context:** The case asks for a metrics endpoint. The format is Prometheus text.
+- **Options:** A hand-written text writer. The official client library.
+- **Choice:** `github.com/prometheus/client_golang`. This is a new Go dependency. Each `/metrics` also has the Go and process collectors.
+- **Why:** The library writes the format correctly and has the histogram type.
+
+## D-074 Api gauges come from Postgres, worker counters live in the process
+
+- **Context:** The api and the worker both report metrics.
+- **Options:** Count events in each process. Read the state from the database.
+- **Choice:** The api gauges `campaign_send_jobs` and `campaign_campaigns` come from one `GROUP BY` query at each scrape. A query error gives no gauge values in that scrape and a log line. The worker counters live in the worker process and start at 0 after a restart. The worker stream gauges come from Redis at each scrape.
+- **Why:** The database is the source of truth, and it survives a restart of the api. A counter needs no database read.
+
+## D-075 No metric has a campaign id label
+
+- **Context:** A label with the campaign id adds one series for each campaign.
+- **Options:** Label by campaign id. Label by channel and status only.
+- **Choice:** No metric has a campaign id label.
+- **Why:** The number of series stays small. The labels also hold no personal data.
+
+## D-076 The api `/readyz` checks Redis
+
+- **Context:** The api reads the streams for the `health` endpoint.
+- **Options:** Check Postgres only. Check Postgres and Redis.
+- **Choice:** `/readyz` checks both. It returns `503` when one is down, and the body has `db` and `redis`. `/healthz` stays as it is.
+- **Why:** An api that cannot reach Redis cannot serve `health`.
+
+## D-077 Implementers committed each task
+
+- **Context:** The plan said not to commit per task. The tasks ran in subagents on the branch `08-dashboard-metrics`.
+- **Options:** Leave all changes uncommitted until the end. Commit after each task.
+- **Choice:** Each implementer committed its task on the branch. Review fixes got their own commits.
+- **Why:** A commit for each task gives the reviewers a fixed diff range. This differs from the plan.
+
+## D-078 Failure rows with equal totals sort by status, then reason
+
+- **Context:** `failures` is ordered by the total count, highest first. Rows with the same total had no fixed order.
+- **Options:** Leave the order to Postgres. Add a fixed tie-break.
+- **Choice:** Rows with equal totals sort by status, then by reason.
+- **Why:** The top 8 and the page do not change between two polls with the same data.
+
+## D-079 `dashboard.RedisPinger` adapts go-redis
+
+- **Context:** The health checker needs a ping and the stream counts. It must not depend on the go-redis types in its tests.
+- **Options:** Use go-redis in the checker. Define a small `Pinger` interface.
+- **Choice:** The checker takes a `Pinger` interface. `dashboard.RedisPinger` adapts the go-redis client to it.
+- **Why:** A test can give the checker a fake, and the checker has one small dependency.
+
+## D-080 Unknown HTTP methods count as "other"
+
+- **Context:** The `method` label of the api request metrics comes from the client. A client can send any text as a method.
+- **Options:** Use the raw method. Clamp unknown methods to "other".
+- **Choice:** The metrics middleware keeps the standard methods and records every other method as `other`. The CORS middleware wraps the metrics middleware. Thus a preflight `OPTIONS` that CORS answers is not counted.
+- **Why:** A client cannot add series without limit. A preflight is not an api call.
+
+## D-081 The label check excludes four label names
+
+- **Context:** FR-19 says no label value is a user id or a campaign id. Some labels carry numbers by design: `le` and `quantile` hold bucket bounds, `code` holds the HTTP status and `version` holds the Go version.
+- **Options:** Check every label value for a number. Skip the four names and check the rest.
+- **Choice:** The test skips the label names `le`, `quantile`, `code` and `version`. For all other labels, it checks that no value equals a test user id or campaign id and that no value contains `@`.
+- **Why:** A check for any number would fail on the allowed labels. A value that equals a real id, or an email, is the real leak.
+
+## D-082 "Last update" shows the last time both calls succeeded
+
+- **Context:** The page makes two calls. One call can fail while the other succeeds.
+- **Options:** Show the last success of any call. Show the last time both calls succeeded.
+- **Choice:** After a partial failure, "Last update" shows the last time both calls succeeded.
+- **Why:** A partial refresh leaves part of the page old. The time must not claim that the page is current.

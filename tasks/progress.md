@@ -94,3 +94,12 @@ Append one entry per session. Use the template below. Put the newest entry at th
   - There is one worker replica. A shared rate limiter is a non-goal.
   - `unknown` send jobs are never retried.
   - The progress stream has no SSE keepalive comment.
+
+## 2026-11-10 — 08-dashboard-metrics
+- Done: slice 08 dashboard and metrics. Added the dashboard store and the health checker. Added the two dashboard endpoints, the api `/metrics`, the worker `/metrics` and the Redis check in `/readyz`. Added the `/dashboard` page. `/` goes to `/dashboard`. Added D-068 to D-082 and the architecture Flow step 5. The backlog item has the spec and the acceptance lines.
+- Verified with: a compose run with `-p cc-verify` on ports 13000, 18080, 18081 and 18082, with `LLM_MODE=mock`. The example brief gave campaign 1 with SMS 96 sent and 5 unknown, email 140 sent and 8 unknown. `GET /api/dashboard/stats` matched `GET /api/campaigns/1/progress`. The highest throughput value was 21.2 per second. `GET /api/dashboard/health` gave four `ok` and pending 0. `docker compose stop mock-provider` made `provider` `down` at once, and `start` made it `ok` in 1 s. Both `/metrics` returned the metrics of `goal.md`. Headless Chrome at 1280 px showed the five parts in the light theme and the dark theme with no horizontal scroll.
+- Failed check: at 360 px, `document.documentElement.scrollWidth` is 366 and `innerWidth` is 360, in both themes. The Throughput and Failures cards are 6 px too wide. NFR-3 fails. The backlog item stays `passes: false`.
+- Next: fix the 360 px overflow of `/dashboard`. Then user review of slice 08. The user sets `08-dashboard-metrics.passes`.
+- Open questions:
+  - Cause of the overflow: the grid `grid gap-6 lg:grid-cols-2` in `frontend/src/pages/dashboard.vue` may need `min-w-0` on its items. This is not tested.
+  - `XLEN` of the streams does not fall after a send, because the worker does not trim the streams. This is not a defect of slice 08.

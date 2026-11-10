@@ -2,9 +2,9 @@
 
 ## Components
 
-- **api** — Go HTTP API. Health endpoints, campaigns, segments, content and send status.
+- **api** — Go HTTP API. Health endpoints, campaigns, segments, content, send status and the dashboard. It serves `/metrics` on port 8080 (D-068 to D-076).
 - **mock-provider** — Go service that acts as an SMS and email provider, like Twilio or SendGrid. It sometimes returns `429`, `5xx`, slow responses and lost responses. It does no dedup (D-018).
-- **worker** — Go service. It plans approved campaigns, sends the messages to the mock provider and reports `/healthz` on port 8082 (D-046 to D-065).
+- **worker** — Go service. It plans approved campaigns, sends the messages to the mock provider and reports `/healthz` and `/metrics` on port 8082 (D-046 to D-065, D-074).
 - **seed** — Go one-shot job. It applies the migrations, loads the seed users, then exits (D-015). The api starts after it completes.
 - **postgres** — the datastore (D-002).
 - **redis** — the send queue, with Redis Streams (D-007).
@@ -81,4 +81,8 @@ ai-sessions/
    - `POST /api/campaigns/{id}/retry` sets the retryable `failed` send jobs of a `completed` campaign to `queued` with `attempts = 0`. The campaign becomes `sending` (D-059, D-060).
    - `GET /api/campaigns/{id}/progress` and its stream give the counts. `GET /api/campaigns/{id}/send-jobs` gives the list with user ids only (D-061).
 5. **Live status** — The dashboard shows the delivery status.
-   - TBD per slice.
+   - `/` goes to `/dashboard`. The page polls `GET /api/dashboard/stats` and `GET /api/dashboard/health` at once, then every 5 s. It stops while the tab is hidden (D-068, D-069, D-070).
+   - `stats` gives the totals, the throughput in 120 buckets of 5 s, the top 8 failure reasons, the mean attempts and a table. The table lists the 20 newest campaigns that are not `draft` (D-071, D-072).
+   - `health` checks Postgres, Redis, the worker `/healthz` and the provider `/healthz` at the same time. Each check has a timeout of 1 s. It also gives `XLEN` and `XPENDING` of each stream. It returns `200` when a service is `down` (D-069).
+   - The api `/readyz` checks Postgres and Redis (D-076).
+   - The api `/metrics` has gauges from one `GROUP BY` query at each scrape and the HTTP request metrics. The worker `/metrics` has counters in the process and stream gauges from Redis. No metric has a campaign id label (D-073, D-074, D-075).
