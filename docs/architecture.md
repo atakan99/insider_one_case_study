@@ -44,7 +44,14 @@ ai-sessions/
 ## Flow
 
 1. **Audience** — Claude makes a segment rule from the brief. The UI shows the audience count.
-   - TBD per slice.
+   - `POST /api/segments/preview` takes the brief. The backend removes control characters and limits the length of the brief before it sends the brief to Claude.
+   - Claude must answer with the tool `submit_segment`. The tool has `strict: true` and a JSON schema from the allowlist. The client sends `tool_choice: auto` (D-025).
+   - The backend validates the answer against the allowlist of fields and operators (D-029). Claude output is never SQL.
+   - If the validation fails, the backend sends the errors back one time as a `tool_result` with `is_error: true`. If the second answer also fails, the api returns `422` (D-024).
+   - The backend compiles the valid rule to a parameterized query. Relative times use the wall clock (D-026).
+   - The response has the rule, a description that the backend writes (D-023), and the audience counts for each channel and each language. The backend adds no language filter (D-022).
+   - A user is in the count of a channel only if the user has consent for that channel. The query goes through `Recipients`, which applies this consent rule.
+   - The api sends CORS headers for the origins in `CORS_ORIGINS` (D-028). The default model is Claude Opus 5.5 (D-027).
 2. **Content** — The UI streams the SMS and email content.
    - TBD per slice.
 3. **Approval** — The marketer previews, edits and approves the content.

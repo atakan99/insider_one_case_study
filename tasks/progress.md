@@ -63,3 +63,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: `make verify` exit 0. `go test -race -count=5 ./internal/mockprovider/` passes. A compose run with `-p cc-verify` gave `202`, `503`, `429` with `Retry-After: 1`, a lost response (curl exit 52) and matching stats.
 - Next: user review of slice 03. The user sets `03-mock-provider.passes`. Then slice 04-segment-rules.
 - Open questions: four Minor items stay open. The decoder accepts data after the JSON object. The 10 s shutdown timeout is too short for `MOCK_SLOW_DELAY` over 10 s. Two tests can be stronger (slow disconnect, bucket after a `429`). Slice 07 must not send `Idempotency-Key` or `X-Idempotency-Key`.
+
+## 2026-11-10 — 04-segment-rules
+- Done: Task 8 of `docs/plans/04-segment-rules.md`. Compose passes `ANTHROPIC_MODEL` and `CORS_ORIGINS` to the `api`. `.env.example` lists both. The `seed` service lost its `env_file` and reads `SEED_*` through Compose. Thus only the `api` gets `ANTHROPIC_API_KEY`. `docs/architecture.md` Flow step 1 describes the segment flow (D-022 to D-028).
+- Verified with: a clean `docker compose -p cc-verify up -d --build --wait` with no `.env` and `LLM_MODE=mock`. The preview request gave `200`, `Access-Control-Allow-Origin: http://localhost:3000`, email 148, SMS 101, and one language `tr`. A headless Chrome run on `/campaigns/new` showed the same counts in the panel. `make verify` exit 0. The NFR-6 import check prints nothing for `internal/segment` and only `campaigncomposer/internal/config` for `internal/llm`.
+- Next: user review of slice 04. The user sets `04-segment-rules.passes`. Then slice 05.
+- Open questions: no live call with a real key tested the strict `anyOf` tool schema and `fallbacks: "default"` on `claude-opus-5-5`. On an old volume, "last 30 days" segments can be empty. `SEED_RESET=true` fixes this (D-026).

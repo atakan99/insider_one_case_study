@@ -40,6 +40,9 @@ services:
     environment:
       DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
       LLM_MODE: ${LLM_MODE:-mock}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+      # Origins that may call the api from a browser (D-028).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
       - "8080:8080"
     depends_on:
@@ -58,11 +61,13 @@ services:
       target: go-service
       args:
         CMD: seed
-    env_file:
-      - path: .env
-        required: false
+    # No env_file: the seed job must not get the API key. Compose reads the
+    # SEED_* values from .env. Empty means the default.
     environment:
       DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
+      SEED_USERS: ${SEED_USERS:-}
+      SEED_RANDOM: ${SEED_RANDOM:-}
+      SEED_RESET: ${SEED_RESET:-}
     restart: "no"
     depends_on:
       postgres:
