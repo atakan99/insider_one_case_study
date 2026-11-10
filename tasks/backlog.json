@@ -313,7 +313,7 @@
       "NFR-6. `make test` starts a temporary Redis and removes it. It works with no local Go.",
       "The mock provider rate_limited counter stays under 2% of requests in a run with the example brief. The first run gave 0 of 257 requests."
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "08-dashboard-metrics",
