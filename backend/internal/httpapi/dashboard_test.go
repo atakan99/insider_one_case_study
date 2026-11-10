@@ -130,19 +130,18 @@ func walk(t *testing.T, path string, v any) {
 				t.Errorf("%s has forbidden key %q", path, k)
 			}
 			if k == "sms" || k == "email" {
-				checkNumeric(t, path+"."+k, child, true)
+				checkNumeric(t, path+"."+k, child)
 			}
 			walk(t, path+"."+k, child)
 		}
 	case []any:
-		for i, child := range x {
+		for _, child := range x {
 			walk(t, path+"[]", child)
-			_ = i
 		}
 	}
 }
 
-func checkNumeric(t *testing.T, path string, v any, allowObject bool) {
+func checkNumeric(t *testing.T, path string, v any) {
 	t.Helper()
 	switch x := v.(type) {
 	case nil, float64:
@@ -153,10 +152,6 @@ func checkNumeric(t *testing.T, path string, v any, allowObject bool) {
 			}
 		}
 	case map[string]any:
-		if !allowObject {
-			t.Errorf("%s is a nested object", path)
-			return
-		}
 		for k, e := range x {
 			if _, ok := e.(float64); !ok {
 				t.Errorf("%s.%s = %v, want a number", path, k, e)

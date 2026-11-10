@@ -38,6 +38,22 @@ func TestMetrics_Route(t *testing.T) {
 	if n := testutil.CollectAndCount(m.duration); n != 1 {
 		t.Errorf("histogram series = %d, want 1", n)
 	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != "campaign_http_request_duration_seconds" {
+			continue
+		}
+		got := map[string]string{}
+		for _, l := range mf.Metric[0].Label {
+			got[l.GetName()] = l.GetValue()
+		}
+		if len(got) != 2 || got["route"] != "GET /api/campaigns/{id}" || got["method"] != "GET" {
+			t.Errorf("histogram labels = %v, want route and method", got)
+		}
+	}
 }
 
 func TestMetrics_UnmatchedRoute(t *testing.T) {

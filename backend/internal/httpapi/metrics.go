@@ -11,7 +11,7 @@ import (
 
 const unmatchedRoute = "unmatched"
 
-// streamRoute is the content stream. Other stream routes end in /stream.
+// contentStreamRoute is the content stream. Other stream routes end in /stream.
 const contentStreamRoute = "POST /api/content/generate"
 
 // knownMethods bound the method label. Any other method counts as "other".
@@ -37,7 +37,7 @@ func NewHTTPMetrics(reg prometheus.Registerer) *HTTPMetrics {
 			Name:    "campaign_http_request_duration_seconds",
 			Help:    "Duration of HTTP requests by route pattern. Stream routes are not timed.",
 			Buckets: prometheus.DefBuckets,
-		}, []string{"route"}),
+		}, []string{"route", "method"}),
 	}
 	reg.MustRegister(m.requests, m.duration)
 	return m
@@ -66,7 +66,7 @@ func (m *HTTPMetrics) Wrap(next http.Handler) http.Handler {
 		}
 		m.requests.WithLabelValues(route, method, strconv.Itoa(code)).Inc()
 		if !isStreamRoute(route) {
-			m.duration.WithLabelValues(route).Observe(time.Since(start).Seconds())
+			m.duration.WithLabelValues(route, method).Observe(time.Since(start).Seconds())
 		}
 	})
 }
