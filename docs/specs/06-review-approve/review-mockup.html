@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review campaign</title>
+<style>
+  /* ---------- Tokens (same names as shadcn-vue in the app) ---------- */
+  :root {
+    --background: #ffffff;
+    --foreground: #0a0a0a;
+    --muted: #f4f4f5;
+    --muted-foreground: #71717a;
+    --border: #e4e4e7;
+    --input: #e4e4e7;
+    --primary: #18181b;
+    --primary-foreground: #fafafa;
+    --accent: #f4f4f5;
+    --destructive: #dc2626;
+    --success: #16a34a;
+    --warning: #d97706;
+    --overlay: rgb(0 0 0 / .45);
+    --ring: #a1a1aa;
+    --bubble: #e9e9eb;
+
+    --radius: 10px;
+    --radius-sm: 6px;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px;
+    --text-xs: 12px; --text-sm: 14px; --text-base: 15px; --text-lg: 18px;
+    --shadow: 0 10px 30px rgb(0 0 0 / .12), 0 2px 6px rgb(0 0 0 / .06);
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0b0b0d; --foreground: #fafafa; --muted: #18181b;
+      --muted-foreground: #a1a1aa; --border: #27272a; --input: #27272a;
+      --primary: #fafafa; --primary-foreground: #18181b; --accent: #1f1f23;
+      --overlay: rgb(0 0 0 / .65); --bubble: #2a2a2e;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font); font-size: var(--text-base); color: var(--foreground); background: var(--muted); }
+
+  /* Page behind the dialog */
+  .page { padding: var(--space-6); max-width: 960px; margin: 0 auto; opacity: .5; }
+  .page h1 { font-size: 22px; margin: 0 0 var(--space-2); }
+  .page .stub { height: 80px; border-radius: var(--radius); background: var(--background); border: 1px solid var(--border); margin-bottom: var(--space-3); }
+
+  .overlay { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; padding: var(--space-4); }
+
+  /* Dialog */
+  .dialog {
+    width: min(920px, 100%); max-height: calc(100dvh - 32px);
+    background: var(--background); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dialog-header { padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--border); display: flex; gap: var(--space-3); align-items: flex-start; }
+  .dialog-header h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+  .dialog-header p { margin: 2px 0 0; color: var(--muted-foreground); font-size: var(--text-sm); }
+  .icon-btn { margin-left: auto; border: 0; background: none; color: var(--muted-foreground); font-size: 20px; line-height: 1; cursor: pointer; padding: var(--space-1); border-radius: var(--radius-sm); }
+  .icon-btn:hover { background: var(--accent); color: var(--foreground); }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border); }
+
+  /* Tabs (segmented) */
+  .tabs { display: inline-flex; background: var(--muted); padding: 3px; border-radius: var(--radius-sm); gap: 2px; }
+  .tab { border: 0; background: none; color: var(--muted-foreground); font: inherit; font-size: var(--text-sm); font-weight: 500;
+         padding: 6px 14px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .tab[aria-selected="true"] { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .count { font-size: var(--text-xs); color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+
+  select, .field textarea, .field input {
+    font: inherit; font-size: var(--text-sm); color: var(--foreground); background: var(--background);
+    border: 1px solid var(--input); border-radius: var(--radius-sm); padding: 8px 10px; width: 100%;
+  }
+  select { width: auto; padding-right: 28px; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+
+  .body { padding: var(--space-4) var(--space-6); overflow: auto; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: var(--space-6); }
+  .section-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin: 0 0 var(--space-2); font-weight: 600; }
+
+  .field { margin-bottom: var(--space-4); }
+  .field-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .field label { font-size: var(--text-sm); font-weight: 500; }
+  .meter { font-size: var(--text-xs); color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .meter.warn { color: var(--warning); } .meter.over { color: var(--destructive); font-weight: 600; }
+  .field textarea { resize: vertical; min-height: 92px; line-height: 1.45; }
+  .field textarea.tall { min-height: 200px; }
+  .hint { font-size: var(--text-xs); color: var(--muted-foreground); margin-top: 6px; }
+  .hint code { background: var(--muted); padding: 1px 4px; border-radius: 4px; }
+  .error { font-size: var(--text-xs); color: var(--destructive); margin-top: 6px; display: none; }
+  .invalid textarea, .invalid input { border-color: var(--destructive); }
+  .invalid .error { display: block; }
+
+  /* Preview */
+  .preview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); gap: var(--space-2); }
+  .phone { background: var(--muted); border: 1px solid var(--border); border-radius: 18px; padding: var(--space-4); min-height: 220px; }
+  .sender { text-align: center; font-size: var(--text-xs); color: var(--muted-foreground); margin-bottom: var(--space-3); }
+  .bubble { background: var(--bubble); border-radius: 16px 16px 16px 4px; padding: 10px 12px; max-width: 85%; font-size: var(--text-sm); line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+  .mail { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .mail-meta { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); background: var(--muted); font-size: var(--text-sm); }
+  .mail-meta div { color: var(--muted-foreground); font-size: var(--text-xs); }
+  .mail-meta strong { display: block; margin-top: 4px; font-size: var(--text-base); color: var(--foreground); }
+  .mail-body { padding: var(--space-4); font-size: var(--text-sm); line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+
+  .dialog-footer { border-top: 1px solid var(--border); padding: var(--space-3) var(--space-6); display: flex; gap: var(--space-3); align-items: center; }
+  .footer-note { font-size: var(--text-xs); color: var(--muted-foreground); margin-right: auto; }
+  .btn { font: inherit; font-size: var(--text-sm); font-weight: 500; border-radius: var(--radius-sm); padding: 9px 16px; cursor: pointer; border: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+  .btn:hover { background: var(--accent); }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  .btn-primary:hover { background: var(--primary); opacity: .9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Confirm */
+  .confirm-overlay { position: fixed; inset: 0; background: var(--overlay); display: none; place-items: center; padding: var(--space-4); }
+  .confirm-overlay.open { display: grid; }
+  .confirm { width: min(440px, 100%); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-6); }
+  .confirm h3 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+  .confirm p { margin: 0 0 var(--space-4); color: var(--muted-foreground); font-size: var(--text-sm); line-height: 1.5; }
+  .summary { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: var(--space-4); }
+  .summary div { display: flex; justify-content: space-between; padding: 8px 12px; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .summary div + div { border-top: 1px solid var(--border); }
+  .confirm-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+
+  .hidden { display: none !important; }
+
+  /* ---------- Mobile: dialog becomes a full-screen sheet ---------- */
+  @media (max-width: 720px) {
+    .overlay { padding: 0; place-items: stretch; }
+    .dialog { max-height: 100dvh; height: 100dvh; border-radius: 0; border: 0; }
+    .dialog-header, .toolbar, .body, .dialog-footer { padding-left: var(--space-4); padding-right: var(--space-4); }
+    .body { grid-template-columns: minmax(0,1fr); gap: var(--space-4); }
+    .toolbar { flex-direction: column; align-items: stretch; }
+    .toolbar .tabs { width: 100%; } .toolbar .tab { flex: 1; justify-content: center; }
+    .dialog-footer { flex-wrap: wrap; }
+    .footer-note { width: 100%; }
+    .dialog-footer .btn { flex: 1; }
+    .confirm-actions .btn { flex: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page" aria-hidden="true">
+  <h1>New campaign</h1>
+  <div class="stub"></div><div class="stub"></div>
+</div>
+
+<div class="overlay">
+  <div class="dialog" role="dialog" aria-labelledby="dlg-title">
+    <div class="dialog-header">
+      <div>
+        <h2 id="dlg-title">Review campaign</h2>
+        <p>Check and edit the messages. Nothing is sent until you confirm.</p>
+      </div>
+      <button class="icon-btn" aria-label="Close">×</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="tabs" role="tablist" aria-label="Channel">
+        <button class="tab" role="tab" aria-selected="true" data-channel="sms">SMS <span class="count">980</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-channel="email">Email <span class="count">1,212</span></button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Language">
+        <button class="tab" role="tab" aria-selected="true" data-lang="tr">Türkçe</button>
+        <button class="tab" role="tab" aria-selected="false" data-lang="en">English</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- Editor -->
+      <div>
+        <p class="section-label">Edit</p>
+
+        <div data-panel="sms">
+          <div class="field" id="f-sms">
+            <div class="field-head"><label for="sms">Message</label><span class="meter" id="m-sms"></span></div>
+            <textarea id="sms"></textarea>
+            <div class="hint">Counted with the longest first name (14 characters). Use <code>{{first_name}}</code> for the name.</div>
+            <div class="error">Too long after the name is filled in. Shorten the message.</div>
+          </div>
+        </div>
+
+        <div data-panel="email" class="hidden">
+          <div class="field" id="f-subject">
+            <div class="field-head"><label for="subject">Subject</label><span class="meter" id="m-subject"></span></div>
+            <input id="subject">
+            <div class="error">Too long after the name is filled in.</div>
+          </div>
+          <div class="field" id="f-body">
+            <div class="field-head"><label for="body">Body</label><span class="meter" id="m-body"></span></div>
+            <textarea id="body" class="tall"></textarea>
+            <div class="hint">Plain text. No HTML.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div>
+        <div class="preview-head">
+          <p class="section-label" style="margin:0">Preview</p>
+          <select id="who" aria-label="Preview as">
+            <option value="Ayşe">Ayşe Yılmaz</option>
+            <option value="Mehmet">Mehmet Demir</option>
+            <option value="Abdurrahmangazi">Abdurrahmangazi K. (longest)</option>
+          </select>
+        </div>
+
+        <div data-panel="sms">
+          <div class="phone">
+            <div class="sender">ORNEKSHOP · now</div>
+            <div class="bubble" id="p-sms"></div>
+          </div>
+        </div>
+
+        <div data-panel="email" class="hidden">
+          <div class="mail">
+            <div class="mail-meta">
+              <div>From: Örnek Shop &lt;hello@ornek.com&gt; · To: <span id="p-to"></span></div>
+              <strong id="p-subject"></strong>
+            </div>
+            <div class="mail-body" id="p-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      <span class="footer-note" id="note">2 languages · 980 SMS · 1,212 email</span>
+      <button class="btn">Cancel</button>
+      <button class="btn btn-primary" id="approve">Approve &amp; send</button>
+    </div>
+  </div>
+</div>
+
+<div class="confirm-overlay" id="confirm" role="alertdialog" aria-labelledby="c-title">
+  <div class="confirm">
+    <h3 id="c-title">Send this campaign?</h3>
+    <p>Messages go out now. Only users who gave consent for a channel get that channel. You cannot undo this.</p>
+    <div class="summary">
+      <div><span>SMS</span><span>980</span></div>
+      <div><span>Email</span><span>1,212</span></div>
+      <div><span>Languages</span><span>Türkçe, English</span></div>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn" id="back">Back</button>
+      <button class="btn btn-primary">Send now</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const data = {
+    tr: { sms: "{{first_name}}, sepetindeki ürünler seni bekliyor! Bugüne özel %30 indirimle tamamla: ornek.com/sepet",
+          subject: "{{first_name}}, sepetin için %30 indirim",
+          body: "Merhaba {{first_name}},\n\nSepetine eklediğin ürünler hâlâ seni bekliyor. Bugüne özel %30 indirimle alışverişini tamamlayabilirsin.\n\nornek.com/sepet\n\nSevgiler,\nÖrnek Shop" },
+    en: { sms: "{{first_name}}, your cart is waiting! Finish today with 30% off: ornek.com/cart",
+          subject: "{{first_name}}, 30% off your cart",
+          body: "Hi {{first_name}},\n\nThe items in your cart are still waiting. Finish your order today with 30% off.\n\nornek.com/cart\n\nCheers,\nÖrnek Shop" }
+  };
+  const LONGEST = 14;
+  let lang = "tr", channel = "sms";
+  const $ = id => document.getElementById(id);
+  const runes = s => [...s].length;
+  const render = (s, n) => s.replaceAll("{{first_name}}", n);
+
+  function meter(el, field, text, limit) {
+    const n = runes(render(text, "x".repeat(LONGEST)));
+    el.textContent = limit ? `${n} / ${limit}` : `${n}`;
+    el.className = "meter" + (limit && n > limit ? " over" : limit && n > limit * .9 ? " warn" : "");
+    field.classList.toggle("invalid", !!limit && n > limit);
+    return !limit || n <= limit;
+  }
+  function refresh() {
+    const d = data[lang], name = $("who").value;
+    const ok = [meter($("m-sms"), $("f-sms"), d.sms, 160),
+                meter($("m-subject"), $("f-subject"), d.subject, 80),
+                meter($("m-body"), $("f-body"), d.body, 2000)].every(Boolean);
+    $("p-sms").textContent = render(d.sms, name);
+    $("p-subject").textContent = render(d.subject, name);
+    $("p-body").textContent = render(d.body, name);
+    $("p-to").textContent = name.toLowerCase() + "@example.com";
+    $("approve").disabled = !ok;
+  }
+  function load() { $("sms").value = data[lang].sms; $("subject").value = data[lang].subject; $("body").value = data[lang].body; refresh(); }
+
+  $("sms").oninput = e => { data[lang].sms = e.target.value; refresh(); };
+  $("subject").oninput = e => { data[lang].subject = e.target.value; refresh(); };
+  $("body").oninput = e => { data[lang].body = e.target.value; refresh(); };
+  $("who").onchange = refresh;
+
+  document.querySelectorAll("[data-channel]").forEach(b => b.onclick = () => {
+    channel = b.dataset.channel;
+    document.querySelectorAll("[data-channel]").forEach(x => x.setAttribute("aria-selected", x === b));
+    document.querySelectorAll("[data-panel]").forEach(p => p.classList.toggle("hidden", p.dataset.panel !== channel));
+  });
+  document.querySelectorAll("[data-lang]").forEach(b => b.onclick = () => {
+    lang = b.dataset.lang;
+    document.querySelectorAll("[data-lang]").forEach(x => x.setAttribute("aria-selected", x === b));
+    load();
+  });
+  $("approve").onclick = () => $("confirm").classList.add("open");
+  $("back").onclick = () => $("confirm").classList.remove("open");
+  load();
+</script>
+</body>
+</html>
