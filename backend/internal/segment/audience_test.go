@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -326,5 +327,136 @@ VALUES ('Şükrü Kağan', 'Test', 'runes.test@example.com', '+905550000000', 't
 	}
 	if len(got.Languages) != 1 || got.Languages[0].MaxFirstName != 11 {
 		t.Errorf("languages = %+v, want one with MaxFirstName 11", got.Languages)
+	}
+}
+
+// emptyDB returns a migrated database with no rows.
+func emptyDB(t *testing.T) (context.Context, *pgxpool.Pool) {
+	t.Helper()
+	url := storetest.NewDB(t)
+	ctx := context.Background()
+	if err := store.Migrate(ctx, url); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return ctx, pool
+}
+
+func addUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool, lang string, email, sms bool) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(ctx, `INSERT INTO users (first_name,last_name,email,phone,language,country,city,birth_date,email_consent,sms_consent,created_at,order_count,total_spent)
+VALUES ('A','B', 'u' || nextval('users_id_seq') || '@example.com','+905000000000',$1,'TR','Istanbul','1990-01-01',$2,$3,now(),0,0) RETURNING id`,
+		lang, email, sms).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	return id
+}
+
+func reachableIDs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, w Where, ch Channel, langs []string) []int64 {
+	t.Helper()
+	q, args, err := ReachableQuery(w, ch, langs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := pool.Query(ctx, q+" ORDER BY id", args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var lang string
+		if err := rows.Scan(&id, &lang); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+func TestReachableQuery_Consent(t *testing.T) {
+	ctx, pool := emptyDB(t)
+	smsOnly := addUser(t, ctx, pool, "en", false, true)
+	emailOnly := addUser(t, ctx, pool, "en", true, false)
+	both := addUser(t, ctx, pool, "en", true, true)
+	addUser(t, ctx, pool, "en", false, false)
+	w := compile(t, `{"op":"and","conditions":[]}`)
+	langs := []string{"tr", "en"}
+	if got, want := reachableIDs(t, ctx, pool, w, SMS(), langs), []int64{smsOnly, both}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sms: got %v want %v", got, want)
+	}
+	if got, want := reachableIDs(t, ctx, pool, w, Email(), langs), []int64{emailOnly, both}; !reflect.DeepEqual(got, want) {
+		t.Errorf("email: got %v want %v", got, want)
+	}
+}
+
+func TestReachableQuery_Languages(t *testing.T) {
+	ctx, pool := emptyDB(t)
+	tr := addUser(t, ctx, pool, "tr", true, true)
+	addUser(t, ctx, pool, "en", true, true)
+	w := compile(t, `{"op":"and","conditions":[]}`)
+	if got, want := reachableIDs(t, ctx, pool, w, SMS(), []string{"tr"}), []int64{tr}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v want %v", got, want)
+	}
+}
+
+func TestReachableQuery_Columns(t *testing.T) {
+	w := compile(t, `{"op":"and","conditions":[]}`)
+	for _, ch := range []Channel{SMS(), Email()} {
+		q, _, err := ReachableQuery(w, ch, []string{"tr"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, bad := range []string{`\blast_name\b`, `\bemail\b`, `\bphone\b`} {
+			if regexp.MustCompile(bad).MatchString(q) {
+				t.Errorf("query matches %s: %s", bad, q)
+			}
+		}
+	}
+	if _, _, err := ReachableQuery(w, Channel{}, nil); !errors.Is(err, ErrInvalidChannel) {
+		t.Errorf("zero channel: %v", err)
+	}
+	if _, _, err := ReachableQuery(Where{}, SMS(), nil); !errors.Is(err, ErrEmptyWhere) {
+		t.Errorf("zero where: %v", err)
+	}
+}
+
+func TestRecipientByID(t *testing.T) {
+	ctx, pool := emptyDB(t)
+	smsOnly := addUser(t, ctx, pool, "tr", false, true)
+	r, ok, err := RecipientByID(ctx, pool, smsOnly, SMS())
+	if err != nil || !ok || r.Phone != "+905000000000" || r.ID != smsOnly || r.Language != "tr" {
+		t.Errorf("consent: r=%+v ok=%v err=%v", r, ok, err)
+	}
+	if _, ok, err := RecipientByID(ctx, pool, smsOnly, Email()); ok || err != nil {
+		t.Errorf("no consent: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := RecipientByID(ctx, pool, 999999, SMS()); ok || err != nil {
+		t.Errorf("unknown: ok=%v err=%v", ok, err)
+	}
+	if _, _, err := RecipientByID(ctx, pool, smsOnly, Channel{}); !errors.Is(err, ErrInvalidChannel) {
+		t.Errorf("zero channel: %v", err)
+	}
+}
+
+func TestChannelByName(t *testing.T) {
+	if ch, err := ChannelByName("sms"); err != nil || ch != SMS() {
+		t.Errorf("sms: %v %v", ch, err)
+	}
+	if ch, err := ChannelByName("email"); err != nil || ch != Email() {
+		t.Errorf("email: %v %v", ch, err)
+	}
+	if _, err := ChannelByName("push"); !errors.Is(err, ErrInvalidChannel) {
+		t.Errorf("push: %v", err)
 	}
 }

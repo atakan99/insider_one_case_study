@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -145,8 +146,10 @@ type Recipient struct {
 	Language  string
 }
 
+// Three functions return user rows: Recipients, ReachableQuery and
+// RecipientByID. Each adds the consent condition of its channel.
+
 // Recipients returns the users that match w and consent to ch, ordered by id.
-// It is the only function that returns user rows.
 func Recipients(ctx context.Context, pool *pgxpool.Pool, w Where, ch Channel) ([]Recipient, error) {
 	switch ch.column {
 	case smsColumn, emailColumn:
@@ -180,4 +183,58 @@ ORDER BY id`
 		return nil, fmt.Errorf("recipients: %w", err)
 	}
 	return out, nil
+}
+
+// ReachableQuery returns a SELECT of (id, language) for the users that match w,
+// consent to ch and have a language in langs. Use it as the source of an
+// INSERT ... SELECT. The caller appends its own args after args.
+func ReachableQuery(w Where, ch Channel, langs []string) (sql string, args []any, err error) {
+	switch ch.column {
+	case smsColumn, emailColumn:
+	default:
+		return "", nil, ErrInvalidChannel
+	}
+	if w.sql == "" {
+		return "", nil, ErrEmptyWhere
+	}
+	args = append(append([]any{}, w.args...), langs)
+	sql = `SELECT id, language FROM users WHERE (` + w.sql + `) AND ` + ch.column +
+		` = TRUE AND language = ANY($` + strconv.Itoa(len(args)) + `)`
+	return sql, args, nil
+}
+
+// Querier is the part of pgxpool.Pool and pgx.Tx that RecipientByID needs.
+type Querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// RecipientByID reads one user with the consent condition of ch.
+// ok is false when the user does not exist or has no consent for ch.
+func RecipientByID(ctx context.Context, q Querier, id int64, ch Channel) (r Recipient, ok bool, err error) {
+	switch ch.column {
+	case smsColumn, emailColumn:
+	default:
+		return Recipient{}, false, ErrInvalidChannel
+	}
+	err = q.QueryRow(ctx, `SELECT id, first_name, last_name, email, phone, language
+FROM users WHERE id = $1 AND `+ch.column+` = TRUE`, id).
+		Scan(&r.ID, &r.FirstName, &r.LastName, &r.Email, &r.Phone, &r.Language)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Recipient{}, false, nil
+	}
+	if err != nil {
+		return Recipient{}, false, fmt.Errorf("recipient by id: %w", err)
+	}
+	return r, true, nil
+}
+
+// ChannelByName returns SMS() for "sms" and Email() for "email".
+func ChannelByName(name string) (Channel, error) {
+	switch name {
+	case "sms":
+		return SMS(), nil
+	case "email":
+		return Email(), nil
+	}
+	return Channel{}, ErrInvalidChannel
 }

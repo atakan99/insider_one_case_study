@@ -2,9 +2,11 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"campaigncomposer/internal/store"
 	"campaigncomposer/internal/store/storetest"
@@ -102,5 +104,105 @@ VALUES ($1, $2, 's', 'subj', 'body', 1, 1, 5)`
 		if _, err := conn.Exec(ctx, f.sql, f.args...); err == nil {
 			t.Errorf("%s: want error after approval, got nil", f.name)
 		}
+	}
+}
+
+// newCampaign inserts a campaign with the given status. Insert does not fire
+// the update trigger, so any status can be the start of a move.
+func newCampaign(t *testing.T, ctx context.Context, conn *pgx.Conn, status string) int64 {
+	t.Helper()
+	approved := "now()"
+	if status == "draft" {
+		approved = "NULL"
+	}
+	var id int64
+	err := conn.QueryRow(ctx, `INSERT INTO campaigns (brief, rule, description, status, created_at, updated_at, approved_at)
+VALUES ('b', '{"op":"and","conditions":[]}', 'd', $1, now(), now(), `+approved+`) RETURNING id`, status).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert campaign %s: %v", status, err)
+	}
+	return id
+}
+
+func TestMigrate_CampaignStatusMoves(t *testing.T) {
+	ctx, conn := migrated(t)
+	allowed := [][2]string{
+		{"draft", "approved"}, {"approved", "queued"}, {"approved", "completed"},
+		{"queued", "sending"}, {"queued", "completed"}, {"sending", "completed"},
+		{"completed", "sending"},
+	}
+	for _, m := range allowed {
+		id := newCampaign(t, ctx, conn, m[0])
+		set := "status = $2"
+		if m[0] == "draft" {
+			set += ", approved_at = now()"
+		}
+		if _, err := conn.Exec(ctx, `UPDATE campaigns SET `+set+` WHERE id = $1`, id, m[1]); err != nil {
+			t.Errorf("%s -> %s: want ok, got %v", m[0], m[1], err)
+		}
+	}
+	denied := [][2]string{
+		{"queued", "approved"}, {"sending", "queued"}, {"completed", "approved"}, {"sending", "draft"},
+		{"approved", "sending"}, {"completed", "queued"},
+	}
+	for _, m := range denied {
+		id := newCampaign(t, ctx, conn, m[0])
+		if _, err := conn.Exec(ctx, `UPDATE campaigns SET status = $2 WHERE id = $1`, id, m[1]); err == nil {
+			t.Errorf("%s -> %s: want error, got nil", m[0], m[1])
+		}
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO campaigns (brief, rule, description, status, created_at, updated_at)
+VALUES ('b', '{}', 'd', 'queued', now(), now())`); err == nil {
+		t.Error("queued with approved_at null accepted")
+	}
+}
+
+func TestMigrate_FrozenAfterApprovalStill(t *testing.T) {
+	ctx, conn := migrated(t)
+	id := newCampaign(t, ctx, conn, "sending")
+	for _, q := range []string{
+		`UPDATE campaigns SET brief = 'x' WHERE id = $1`,
+		`UPDATE campaigns SET rule = '{"op":"or","conditions":[]}' WHERE id = $1`,
+		`UPDATE campaigns SET approved_at = now() + interval '1 day' WHERE id = $1`,
+	} {
+		if _, err := conn.Exec(ctx, q, id); err == nil {
+			t.Errorf("want error for %s", q)
+		}
+	}
+	// Content rows can only exist for a draft, so insert one before approval.
+	draft := newCampaign(t, ctx, conn, "draft")
+	if _, err := conn.Exec(ctx, `INSERT INTO campaign_contents (campaign_id, language, sms, email_subject, email_body, sms_count, email_count, first_name_runes)
+VALUES ($1, 'tr', 's', 'subj', 'body', 1, 1, 5)`, draft); err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []string{"approved", "queued", "sending"} {
+		if _, err := conn.Exec(ctx, `UPDATE campaigns SET status = $2, approved_at = coalesce(approved_at, now()) WHERE id = $1`, draft, to); err != nil {
+			t.Fatalf("move to %s: %v", to, err)
+		}
+	}
+	if _, err := conn.Exec(ctx, `UPDATE campaign_contents SET sms = 'x' WHERE campaign_id = $1`, draft); err == nil {
+		t.Error("content update accepted while sending")
+	}
+}
+
+func TestMigrate_SendJobsUnique(t *testing.T) {
+	ctx, conn := migrated(t)
+	id := newCampaign(t, ctx, conn, "queued")
+	var uid int64
+	if err := conn.QueryRow(ctx, insertUser+` RETURNING id`, "u@example.com", "tr", "TR").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	ins := `INSERT INTO send_jobs (campaign_id, user_id, channel, language, status, created_at, updated_at)
+VALUES ($1, $2, $3, 'tr', 'queued', now(), now())`
+	if _, err := conn.Exec(ctx, ins, id, uid, "sms"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := conn.Exec(ctx, ins, id, uid, "sms")
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Errorf("duplicate: want unique violation, got %v", err)
+	}
+	if _, err := conn.Exec(ctx, ins, id, uid, "email"); err != nil {
+		t.Errorf("other channel: %v", err)
 	}
 }

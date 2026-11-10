@@ -27,7 +27,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, o Options, reset bool) (inser
 		return false, nil
 	}
 	if reset {
-		if _, err := tx.Exec(ctx, `TRUNCATE events, users RESTART IDENTITY`); err != nil {
+		if _, err := tx.Exec(ctx, `TRUNCATE events, send_jobs, users RESTART IDENTITY`); err != nil {
 			return false, fmt.Errorf("truncate: %w", err)
 		}
 	}
