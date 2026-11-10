@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"campaigncomposer/internal/config"
@@ -44,8 +47,9 @@ type redisPinger struct{ rdb *redis.Client }
 
 func (r redisPinger) Ping(ctx context.Context) error { return r.rdb.Ping(ctx).Err() }
 
-// healthHandler answers GET /healthz with the state of Postgres and Redis.
-func healthHandler(db pinger, rdb *redis.Client) http.Handler {
+// healthHandler answers GET /healthz with the state of Postgres and Redis,
+// and GET /metrics with metrics.
+func healthHandler(db pinger, rdb *redis.Client, metrics http.Handler) http.Handler {
 	check := func(ctx context.Context, p pinger) string {
 		ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 		defer cancel()
@@ -66,6 +70,7 @@ func healthHandler(db pinger, rdb *redis.Client) http.Handler {
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(body)
 	})
+	mux.Handle("GET /metrics", metrics)
 	return mux
 }
 
@@ -95,9 +100,17 @@ func run() error {
 	defer rdb.Close()
 
 	host, _ := os.Hostname()
+	queue := delivery.NewQueue(rdb, fmt.Sprintf("%s-%d", host, os.Getpid()))
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	metrics := delivery.NewMetrics(reg, queue)
 	w := &delivery.Worker{
 		Store:    delivery.NewStore(pool),
-		Queue:    delivery.NewQueue(rdb, fmt.Sprintf("%s-%d", host, os.Getpid())),
+		Queue:    queue,
+		Metrics:  metrics,
 		Provider: delivery.NewProvider(cfg.ProviderURL, cfg.Timeout),
 		Allow:    segment.Default(),
 		Clock:    delivery.RealClock(),
@@ -107,7 +120,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           healthHandler(pool, rdb),
+		Handler:           healthHandler(pool, rdb, promhttp.HandlerFor(reg, promhttp.HandlerOpts{})),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	errc := make(chan error, 1)

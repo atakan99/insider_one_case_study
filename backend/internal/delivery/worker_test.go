@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"campaigncomposer/internal/config"
 	"campaigncomposer/internal/delivery/deliverytest"
@@ -229,6 +231,8 @@ func TestWorker_EndToEnd(t *testing.T) {
 	w.RecoverEvery = 200 * time.Millisecond
 	logs := &syncBuf{}
 	w.Log = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	reg := prometheus.NewRegistry()
+	w.Metrics = NewMetrics(reg, e.queue)
 	start := time.Now()
 	stop := e.run(t, w)
 	e.campaignDone(t, 90*time.Second)
@@ -244,6 +248,52 @@ func TestWorker_EndToEnd(t *testing.T) {
 	e.checkLogsNoPersonalData(t, logs.String())
 	if p.Channels[ChannelSMS].Sent == 0 || p.Channels[ChannelEmail].Sent == 0 {
 		t.Fatalf("no sent jobs: %+v", p.Channels)
+	}
+	e.checkMetrics(t, reg)
+}
+
+// checkMetrics checks FR-18 (results match the table) and FR-19 (no ids and
+// no addresses in label values).
+func (e *workerEnv) checkMetrics(t *testing.T, reg *prometheus.Registry) {
+	t.Helper()
+	fams, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := map[string]bool{strconv.FormatInt(e.cid, 10): true}
+	rs, err := e.pool.Query(e.ctx, `SELECT id::text FROM users`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rs.Next() {
+		var id string
+		if err := rs.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		forbidden[id] = true
+	}
+	rs.Close()
+	var sent float64
+	for _, f := range fams {
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+				switch l.GetName() {
+				case "le", "quantile", "code", "version":
+					continue
+				}
+				if forbidden[l.GetValue()] || strings.Contains(l.GetValue(), "@") {
+					t.Fatalf("%s has label %s=%q", f.GetName(), l.GetName(), l.GetValue())
+				}
+			}
+			if f.GetName() == "campaign_send_results_total" && labels["status"] == "sent" {
+				sent += m.GetCounter().GetValue()
+			}
+		}
+	}
+	if want := e.countStatus(t, "sent"); sent != float64(want) {
+		t.Fatalf("send_results_total{status=sent} = %v, sent jobs = %d", sent, want)
 	}
 }
 

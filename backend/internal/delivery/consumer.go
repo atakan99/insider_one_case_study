@@ -17,6 +17,7 @@ type Consumer struct {
 	MaxAttempts int
 	Jitter      func() float64
 	Log         *slog.Logger
+	Metrics     *Metrics // nil means no metrics
 
 	// Hooks for tests. Both are nil in production.
 	afterClaim func()
@@ -43,7 +44,10 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 		return c.Queue.Ack(done, c.Channel, e.StreamID)
 	}
 
-	if err := c.Limiter.Wait(ctx); err != nil {
+	waitFrom := c.Clock.Now()
+	err := c.Limiter.Wait(ctx)
+	c.Metrics.Waited(c.Channel, c.Clock.Now().Sub(waitFrom))
+	if err != nil {
 		return err
 	}
 	job, ok, err := c.Store.Claim(ctx, e.JobID, c.Clock.Now())
@@ -79,7 +83,9 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	reference := fmt.Sprintf("%d:%d:%s", job.CampaignID, job.UserID, job.Channel)
 	// A started request may finish: only HTTP.Timeout bounds it, so a
 	// shutdown does not turn a delivered message into "canceled".
+	sendFrom := c.Clock.Now()
 	o := c.Provider.Send(done, c.Channel, msg, reference)
+	c.Metrics.Attempt(c.Channel, o.Kind, c.Clock.Now().Sub(sendFrom))
 	if o.Kind == Retryable && o.RetryAfter > 0 {
 		c.Limiter.Pause(o.RetryAfter)
 	}
@@ -103,6 +109,10 @@ func (c *Consumer) finish(ctx context.Context, e Entry, job Job, r Result) error
 	if err != nil {
 		c.log().Error("write send result", "job_id", job.ID, "channel", c.Channel, "attempt", job.Attempts, "error", err)
 		return err
+	}
+	c.Metrics.Result(c.Channel, r.Status)
+	if r.Status == StatusRetrying {
+		c.Metrics.RetryScheduled(c.Channel)
 	}
 	return c.Queue.Ack(ctx, c.Channel, e.StreamID)
 }

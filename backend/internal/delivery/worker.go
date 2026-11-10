@@ -38,6 +38,7 @@ type Worker struct {
 	Clock    Clock
 	Cfg      config.WorkerConfig
 	Log      *slog.Logger
+	Metrics  *Metrics // nil means no metrics
 
 	// Intervals. Zero means the default. Tests set short ones.
 	PlanEvery, RetryEvery, RecoverEvery, ClaimIdle time.Duration
@@ -90,7 +91,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			Store: w.Store, Queue: w.Queue, Provider: w.Provider,
 			Limiter: NewLimiter(w.Cfg.RatePerSec, w.Clock),
 			Channel: ch, Clock: w.Clock, MaxAttempts: w.Cfg.MaxAttempts,
-			Jitter: rand.Float64, Log: w.log(),
+			Jitter: rand.Float64, Log: w.log(), Metrics: w.Metrics,
 		}
 		for range w.Cfg.Consumers {
 			wg.Add(1)

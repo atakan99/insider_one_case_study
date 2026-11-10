@@ -7,10 +7,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	"campaigncomposer/internal/delivery"
 	"campaigncomposer/internal/delivery/deliverytest"
 )
 
@@ -58,7 +62,7 @@ func TestHealthz(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			code, body := get(t, healthHandler(fakeDB{tc.db}, tc.rdb))
+			code, body := get(t, healthHandler(fakeDB{tc.db}, tc.rdb, http.NotFoundHandler()))
 			if code != tc.code || body["db"] != tc.db_ || body["redis"] != tc.redis {
 				t.Fatalf("got %d %v", code, body)
 			}
@@ -66,5 +70,16 @@ func TestHealthz(t *testing.T) {
 				t.Fatalf("status = %q, want %q", body["status"], want)
 			}
 		})
+	}
+}
+
+func TestMetricsRoute(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	delivery.NewMetrics(reg, nil).Result(delivery.ChannelSMS, delivery.StatusSent)
+	h := healthHandler(fakeDB{}, deliverytest.NewRedis(t, 2), promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `campaign_send_results_total{channel="sms",status="sent"} 1`) {
+		t.Fatalf("GET /metrics = %d\n%s", rec.Code, rec.Body.String())
 	}
 }
