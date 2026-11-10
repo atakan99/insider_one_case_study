@@ -53,7 +53,13 @@ ai-sessions/
    - A user is in the count of a channel only if the user has consent for that channel. The preview count applies consent with `FILTER` columns in `CountAudience`. `Recipients` is the only function that returns user rows. It always adds the consent condition for its channel. Slices 05 to 07 get recipients only through `Recipients`.
    - The api sends CORS headers for the origins in `CORS_ORIGINS` (D-028). The default model is Claude Opus 5.5 (D-027).
 2. **Content** — The UI streams the SMS and email content.
-   - TBD per slice.
+   - `POST /api/content/generate` takes the brief and the rule. The browser sends the rule back. The backend validates the rule again and runs the audience query again (D-032).
+   - The backend makes one Claude call for each language, all at the same time. Each call has its own validation and its own repair round (D-030).
+   - Claude must answer with the tool `submit_content`. The tool has `eager_input_streaming: true` and `strict: true`, so the drafts stream while Claude writes. The validator is the gate, because the API does not validate an eager stream (D-033).
+   - The validator checks the limits after it renders `{{first_name}}` with the longest first name of the language audience (D-031).
+   - The response is a Server-Sent Events stream with the events `audience`, `draft`, `retry`, `final`, `error` and `done`.
+   - `cmd/api` gives the mock client its default answers, so the flow works with `LLM_MODE=mock` and no key (D-034).
+   - The api server has no write timeout, because a stream can last 90 s.
 3. **Approval** — The marketer previews, edits and approves the content.
    - TBD per slice.
 4. **Send** — A queue sends the messages to the mock provider.

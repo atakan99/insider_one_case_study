@@ -239,3 +239,10 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Copy the content into `internal/llm`. Add a language field to `llm.Request`. Inject a default function from `cmd/api`.
 - **Choice:** `cmd/api` gives the mock a function that selects the answer from the tool name. `internal/content` owns the default content and reads the language from its own user message.
 - **Why:** Each package keeps its own data. `llm.Request` gets no field that only the mock uses.
+
+## D-035 Stream details of the content endpoint
+
+- **Context:** The content endpoint sends `draft` events while Claude writes. The spec did not fix four details. They are the draft throttle after a retry, the last draft, a client that disconnects, and a response that cannot flush.
+- **Options:** Reset the throttle after a retry or keep it. Always send the last draft or skip it when the text is the same. Send `error` and `done` after a disconnect or send nothing. Ignore a missing flusher or return an error.
+- **Choice:** The draft throttle does not reset after a retry. The handler skips the last draft when the text did not change. After a client disconnect, it sends no `error` and no `done` event. If the response cannot flush, it returns `500` with `internal_error`. `net/http` can always flush, so this path is a guard only.
+- **Why:** A throttle that resets would let a retry send a burst of drafts. A repeated draft adds no information. No client reads the events after a disconnect. A stream that cannot flush is not a stream, so the handler fails early and clearly.

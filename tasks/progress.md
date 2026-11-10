@@ -69,3 +69,11 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Verified with: a clean `docker compose -p cc-verify up -d --build --wait` with no `.env` and `LLM_MODE=mock`. The preview request gave `200`, `Access-Control-Allow-Origin: http://localhost:3000`, email 148, SMS 101, and one language `tr`. A headless Chrome run on `/campaigns/new` showed the same counts in the panel. `make verify` exit 0. The NFR-6 import check prints nothing for `internal/segment` and only `campaigncomposer/internal/config` for `internal/llm`.
 - Next: user review of slice 04. The user sets `04-segment-rules.passes`. Then slice 05.
 - Open questions: no live call with a real key tested the strict `anyOf` tool schema and `fallbacks: "default"` on `claude-opus-5-5`. On an old volume, "last 30 days" segments can be empty. `SEED_RESET=true` fixes this (D-026).
+
+## 2026-11-10 — 05-content-generation
+- Done: slice 05 content generation. The api has `POST /api/content/generate`, an SSE stream with one Claude call for each language (D-030 to D-035). `internal/content` validates the limits after rendering with the longest first name. The frontend shows live draft cards on `/campaigns/new`. `docs/architecture.md` Flow step 2 describes the content flow.
+- Verified with: a clean `docker compose -p cc-verify up -d --build --wait` with no `.env` and `LLM_MODE=mock`. `POST /api/content/generate` with the example brief gave `audience`, 8 `draft`, `final` for `tr` (`sms_runes` 76) and `done`. A headless Chrome run on `/campaigns/new` showed the `tr` card with counters 76/160 and 44/80. `make verify` exit 0. The NFR-3 import check prints only `campaigncomposer/internal/config`.
+- Next: user review of slice 05. The user sets `05-content-generation.passes`. Then slice 06-review-approve.
+- Open questions:
+  - No live call with a real key tested eager streaming together with `strict` on `submit_content`.
+  - The Minor items in `.superpowers/sdd/05-content-generation/progress.md` go to the final review.
