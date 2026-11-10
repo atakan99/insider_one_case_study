@@ -256,7 +256,7 @@
   {
     "id": "07-send-queue",
     "title": "Send queue",
-    "spec": null,
+    "spec": "docs/specs/07-send-queue/",
     "acceptance": [],
     "passes": false
   },

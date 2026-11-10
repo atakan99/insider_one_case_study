@@ -1,0 +1,89 @@
+<h2>After "Send now": the sending popup</h2>
+<p class="subtitle">Two ways to show the steps. Click the one that feels closer. Below them is a sketch of the status area on the campaign page, with retry.</p>
+
+<style>
+  .pop{border:1px solid #d4d4d8;border-radius:12px;padding:18px;background:#fff;color:#18181b;font-family:system-ui;max-width:440px}
+  .pop h4{margin:0 0 4px;font-size:16px}
+  .pop .muted{color:#71717a;font-size:13px;margin:0 0 14px}
+  .steps{display:flex;align-items:center;gap:6px;margin-bottom:16px;font-size:12px}
+  .st{display:flex;align-items:center;gap:6px}
+  .dot{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid #d4d4d8;color:#71717a}
+  .done .dot{background:#16a34a;border-color:#16a34a;color:#fff}
+  .now .dot{border-color:#2563eb;color:#2563eb}
+  .line{flex:1;height:2px;background:#d4d4d8;min-width:14px}
+  .line.ok{background:#16a34a}
+  .bar{height:8px;border-radius:4px;background:#f4f4f5;overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .row{margin-bottom:12px;font-size:13px}
+  .row .hd{display:flex;justify-content:space-between;margin-bottom:5px}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#52525b;margin-top:6px}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+  .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+  .b{padding:7px 12px;border-radius:8px;font-size:13px;border:1px solid #d4d4d8;background:#fff}
+  .b.p{background:#18181b;color:#fff;border-color:#18181b}
+  .chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;border:1px solid #d4d4d8;margin-right:4px}
+  .chip.on{background:#18181b;color:#fff;border-color:#18181b}
+  .chip.ok{background:#dcfce7;border-color:#86efac;color:#166534}
+  table.t{width:100%;border-collapse:collapse;font-size:12px}
+  table.t td,table.t th{padding:6px 8px;border-bottom:1px solid #e4e4e7;text-align:left}
+  .badge{padding:2px 7px;border-radius:999px;font-size:11px}
+  .sent{background:#dcfce7;color:#166534}.fail{background:#fee2e2;color:#991b1b}.unk{background:#fef3c7;color:#92400e}.retry{background:#dbeafe;color:#1e40af}
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="stepper" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="pop">
+        <h4>Sending campaign #12</h4>
+        <p class="muted">You can close this. Sending goes on in the background.</p>
+        <div class="steps">
+          <div class="st done"><div class="dot">✓</div>Approved</div><div class="line ok"></div>
+          <div class="st done"><div class="dot">✓</div>Queued</div><div class="line ok"></div>
+          <div class="st now"><div class="dot">3</div>Sending</div><div class="line"></div>
+          <div class="st"><div class="dot">4</div>Done</div>
+        </div>
+        <div class="row"><div class="hd"><b>SMS</b><span>612 / 980</span></div>
+          <div class="bar"><i style="width:58%;background:#16a34a"></i><i style="width:3%;background:#2563eb"></i><i style="width:1%;background:#dc2626"></i></div></div>
+        <div class="row"><div class="hd"><b>Email</b><span>701 / 1,212</span></div>
+          <div class="bar"><i style="width:55%;background:#16a34a"></i><i style="width:2%;background:#2563eb"></i><i style="width:1%;background:#f59e0b"></i></div></div>
+        <div class="legend"><span><i class="sw" style="background:#16a34a"></i>Sent</span><span><i class="sw" style="background:#2563eb"></i>Retrying</span><span><i class="sw" style="background:#dc2626"></i>Failed</span><span><i class="sw" style="background:#f59e0b"></i>Unknown</span></div>
+        <div class="btns"><span class="b">Close</span><span class="b p">Open dashboard</span></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>A — Stepper + bar per channel</h3><p>Four steps on top. One bar for SMS and one for email, coloured by outcome.</p></div>
+  </div>
+
+  <div class="card" data-choice="compact" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="pop">
+        <h4>Sending campaign #12</h4>
+        <p class="muted">Step 3 of 4 · Sending</p>
+        <div style="margin-bottom:14px"><span class="chip ok">✓ Approved</span><span class="chip ok">✓ Queued</span><span class="chip on">Sending</span><span class="chip">Done</span></div>
+        <div class="row"><div class="hd"><b>All messages</b><span>1,313 / 2,192 · 60%</span></div>
+          <div class="bar"><i style="width:60%;background:#2563eb"></i></div></div>
+        <div style="font-size:13px;color:#52525b">1,290 sent · 14 retrying · 6 failed · 3 unknown</div>
+        <div class="btns"><span class="b">Close</span><span class="b p">Open dashboard</span></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B — Compact: chips + one bar</h3><p>Step chips, one total bar, outcome counts as text.</p></div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">On the campaign page: who got what, and retry</h3>
+<div class="mockup">
+  <div class="mockup-header">/campaigns/12 — delivery section (sketch)</div>
+  <div class="mockup-body" style="background:#fff;color:#18181b">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div><span class="chip on">All</span><span class="chip">Sent 2,170</span><span class="chip">Failed 12</span><span class="chip">Unknown 10</span></div>
+      <span class="b p">Retry 12 failed</span>
+    </div>
+    <table class="t">
+      <tr><th>Recipient</th><th>Channel</th><th>Lang</th><th>Status</th><th>Tries</th><th>Last error</th></tr>
+      <tr><td>User #4012</td><td>SMS</td><td>tr</td><td><span class="badge sent">Sent</span></td><td>1</td><td></td></tr>
+      <tr><td>User #4013</td><td>Email</td><td>tr</td><td><span class="badge sent">Sent</span></td><td>2</td><td>429 rate limited</td></tr>
+      <tr><td>User #4020</td><td>SMS</td><td>en</td><td><span class="badge fail">Failed</span></td><td>5</td><td>503 unavailable</td></tr>
+      <tr><td>User #4031</td><td>Email</td><td>tr</td><td><span class="badge unk">Unknown</span></td><td>1</td><td>timeout — may be delivered</td></tr>
+      <tr><td>User #4044</td><td>SMS</td><td>tr</td><td><span class="badge retry">Retrying</span></td><td>2</td><td>500 error</td></tr>
+    </table>
+  </div>
+</div>
