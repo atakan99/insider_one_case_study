@@ -4,9 +4,10 @@ import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Campaign } from '@/lib/campaigns'
+import type { Progress } from '@/lib/delivery'
 
 import { CampaignRequestError, getCampaign } from '@/lib/campaigns'
-import { getProgress } from '@/lib/delivery'
+import { getProgress, watchProgress } from '@/lib/delivery'
 
 import CampaignPage from '../[id].vue'
 
@@ -16,17 +17,21 @@ const route = vi.hoisted(() => ({ params: { id: '12' } as Record<string, string>
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push, replace }) }))
 vi.mock('@/lib/delivery', async (orig) => {
   const real = await orig<typeof import('@/lib/delivery')>()
-  return { ...real, getProgress: vi.fn() }
+  return { ...real, getProgress: vi.fn(), watchProgress: vi.fn() }
 })
 vi.mock('@/components/campaign/delivery-section.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
     default: defineComponent({
       props: { campaignId: Number, progress: Object },
-      emits: ['view-progress', 'retried'],
+      emits: ['viewProgress', 'retried', 'refresh'],
       setup(props, { emit }) {
         return () => h('div', { 'data-test': 'delivery-stub', 'data-status': (props.progress as { status: string }).status }, [
-          h('button', { 'data-test': 'stub-view', 'onClick': () => emit('view-progress') }, 'v'),
+          h('button', { 'data-test': 'stub-view', 'onClick': () => emit('viewProgress') }, 'v'),
+          h('button', { 'data-test': 'stub-refresh', 'onClick': () => emit('refresh') }, 'r'),
+          h('button', { 'data-test': 'stub-retried', 'onClick': () => emit('retried', { campaign_id: 12, status: 'sending', channels: { sms: {}, email: {} } }) }, 't'),
+          (props.progress as { status: string }).status === 'completed' ? h('span', { 'data-test': 'retry-stub' }, 'Retry') : null,
+          ['approved', 'queued', 'sending'].includes((props.progress as { status: string }).status) ? h('span', { 'data-test': 'view-stub' }, 'View progress') : null,
         ])
       },
     }),
@@ -37,10 +42,10 @@ vi.mock('@/components/campaign/sending-dialog.vue', async () => {
   return {
     default: defineComponent({
       props: { campaignId: Number, open: Boolean },
-      emits: ['update:open', 'open-list'],
+      emits: ['update:open', 'openList'],
       setup(props, { emit }) {
         return () => props.open
-          ? h('div', { 'data-test': 'sending-stub' }, [h('button', { 'data-test': 'stub-open-list', 'onClick': () => emit('open-list') }, 'l')])
+          ? h('div', { 'data-test': 'sending-stub' }, [h('button', { 'data-test': 'stub-open-list', 'onClick': () => emit('openList') }, 'l')])
           : null
       },
     }),
@@ -67,6 +72,9 @@ vi.mock('@/components/campaign/review-dialog.vue', async () => {
 
 const get = vi.mocked(getCampaign)
 const progress = vi.mocked(getProgress)
+const watch = vi.mocked(watchProgress)
+const stopWatch = vi.fn()
+let pushProgress: (p: Progress) => void
 const zero = { total: 0, queued: 0, sending: 0, retrying: 0, sent: 0, failed: 0, unknown: 0, skipped: 0, retryable_failed: 0 }
 const prog = (status: string) => ({ campaign_id: 12, status, channels: { sms: zero, email: zero } }) as never
 
@@ -93,6 +101,12 @@ describe('campaign page', () => {
   beforeEach(() => {
     get.mockReset()
     progress.mockReset()
+    watch.mockReset()
+    stopWatch.mockReset()
+    watch.mockImplementation((_id, on) => {
+      pushProgress = on
+      return stopWatch
+    })
     progress.mockResolvedValue(prog('approved'))
     push.mockReset()
     replace.mockReset()
@@ -174,5 +188,71 @@ describe('campaign page', () => {
     await flushPromises()
     expect(w.text()).toContain('Campaign not found')
     expect(w.findComponent(RouterLinkStub).props('to')).toBe('/campaigns')
+  })
+
+  it('follows the stream: completed shows Retry and the Completed badge', async () => {
+    get.mockResolvedValue(campaign({ status: 'sending' }))
+    progress.mockResolvedValue(prog('sending'))
+    const w = make()
+    await flushPromises()
+    expect(watch).toHaveBeenCalledWith(12, expect.any(Function))
+    expect(w.text()).toContain('Sending')
+    expect(w.find('[data-test="view-stub"]').exists()).toBe(true)
+    expect(w.find('[data-test="retry-stub"]').exists()).toBe(false)
+    pushProgress({ campaign_id: 12, status: 'completed', channels: { sms: { ...zero, total: 5, failed: 2, retryable_failed: 2 }, email: zero } })
+    await flushPromises()
+    expect(w.find('[data-status="completed"]').text()).toBe('Completed')
+    expect(w.find('[data-test="retry-stub"]').exists()).toBe(true)
+    expect(w.find('[data-test="view-stub"]').exists()).toBe(false)
+    expect(stopWatch).toHaveBeenCalled()
+  })
+
+  it('does not watch a completed campaign and stops on unmount', async () => {
+    get.mockResolvedValue(campaign({ status: 'completed' }))
+    progress.mockResolvedValue(prog('completed'))
+    const w = make()
+    await flushPromises()
+    expect(watch).not.toHaveBeenCalled()
+    get.mockResolvedValue(campaign({ status: 'sending' }))
+    progress.mockResolvedValue(prog('sending'))
+    const w2 = make()
+    await flushPromises()
+    stopWatch.mockClear()
+    w2.unmount()
+    expect(stopWatch).toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('a retry starts the watch again', async () => {
+    get.mockResolvedValue(campaign({ status: 'completed' }))
+    progress.mockResolvedValue(prog('completed'))
+    const w = make()
+    await flushPromises()
+    await w.find('[data-test="stub-retried"]').trigger('click')
+    expect(watch).toHaveBeenCalledTimes(1)
+    expect(w.find('[data-test="sending-stub"]').exists()).toBe(true)
+  })
+
+  it('refreshes the progress when the section asks', async () => {
+    get.mockResolvedValue(campaign({ status: 'completed' }))
+    progress.mockResolvedValue(prog('completed'))
+    const w = make()
+    await flushPromises()
+    progress.mockClear()
+    progress.mockResolvedValue(prog('sending'))
+    await w.find('[data-test="stub-refresh"]').trigger('click')
+    await flushPromises()
+    expect(progress).toHaveBeenCalledTimes(1)
+    expect(w.find('[data-test="view-stub"]').exists()).toBe(true)
+  })
+
+  it('a progress failure shows an inline error and keeps the page', async () => {
+    get.mockResolvedValue(campaign())
+    progress.mockImplementation(() => Promise.reject(new CampaignRequestError('request_failed', 'Progress is not available.', 500, [])))
+    const w = make()
+    await flushPromises()
+    expect(w.text()).toContain('Campaign #12')
+    expect(w.text()).toContain('Istanbul users')
+    expect(w.find('[data-test="progress-error"]').text()).toBe('Progress is not available.')
   })
 })

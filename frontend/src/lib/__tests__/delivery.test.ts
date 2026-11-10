@@ -96,7 +96,9 @@ describe('watchProgress', () => {
     const on = vi.fn()
     watchProgress(12, on)
     const es = FakeEventSource.instances[0]!
-    es.emit('done', progress('completed', 10))
+    es.emit('progress', progress('completed', 10))
+    es.emit('done', {})
+    expect(on).toHaveBeenCalledTimes(1)
     expect(on).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }))
     expect(es.closed).toBe(true)
     es.emit('error')
@@ -117,6 +119,23 @@ describe('watchProgress', () => {
     expect(on).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(2000)
     expect(apiFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips a tick while a poll is in flight', async () => {
+    vi.useFakeTimers()
+    let resolve!: (p: Progress) => void
+    vi.mocked(apiFetch).mockImplementation(() => new Promise((r) => {
+      resolve = r as (p: Progress) => void
+    }))
+    const on = vi.fn()
+    watchProgress(12, on)
+    FakeEventSource.instances[0]!.emit('error')
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(apiFetch).toHaveBeenCalledTimes(1)
+    resolve(progress())
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(on).toHaveBeenCalledTimes(1)
   })
 
   it('keeps polling after a failed poll', async () => {

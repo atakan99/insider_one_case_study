@@ -74,6 +74,7 @@ function parse(e: Event): Progress | null {
 // Reads the progress stream. If the stream fails, it asks for the progress every 2 s.
 export function watchProgress(id: number, on: (p: Progress) => void): () => void {
   let stopped = false
+  let inFlight = false
   let timer: ReturnType<typeof setInterval> | undefined
   const es = new EventSource(`${API_BASE_URL}/campaigns/${id}/progress/stream`)
 
@@ -101,6 +102,9 @@ export function watchProgress(id: number, on: (p: Progress) => void): () => void
       return
     es.close()
     timer ??= setInterval(async () => {
+      if (inFlight)
+        return
+      inFlight = true
       try {
         const p = await getProgress(id)
         emit(p)
@@ -109,6 +113,9 @@ export function watchProgress(id: number, on: (p: Progress) => void): () => void
       }
       catch {
         // Try again at the next tick.
+      }
+      finally {
+        inFlight = false
       }
     }, POLL_MS)
   })

@@ -22,9 +22,8 @@ import { listSendJobs, retryCampaign } from '@/lib/delivery'
 type Chip = 'all' | 'sent' | 'retrying' | 'failed' | 'unknown' | 'skipped'
 
 const props = defineProps<{ campaignId: number, progress: Progress }>()
-// The kebab-case names are the component contract of the plan.
 
-const emit = defineEmits<{ 'view-progress': [], 'retried': [progress: Progress] }>()
+const emit = defineEmits<{ viewProgress: [], retried: [progress: Progress], refresh: [] }>()
 
 const FALLBACK_MESSAGE = 'Something went wrong. Try again.'
 const PAGE_SIZE = 50
@@ -134,8 +133,7 @@ watch(
 )
 
 function viewProgress() {
-  // eslint-disable-next-line vue/custom-event-name-casing
-  emit('view-progress')
+  emit('viewProgress')
 }
 
 async function sendAgain() {
@@ -151,6 +149,9 @@ async function sendAgain() {
   catch (err) {
     confirmOpen.value = false
     retryError.value = errorMessage(err)
+    // A 409 means the page state is stale. Ask the page for fresh progress.
+    if (err instanceof CampaignRequestError && err.status === 409)
+      emit('refresh')
   }
   finally {
     retrying.value = false

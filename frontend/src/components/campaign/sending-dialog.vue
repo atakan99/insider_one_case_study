@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import type { ChannelProgress, DeliveryChannel, Progress, Step } from '@/lib/delivery'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { currentStep, watchProgress } from '@/lib/delivery'
+import { currentStep } from '@/lib/delivery'
 
-const props = defineProps<{ campaignId: number, open: boolean }>()
+const props = defineProps<{ campaignId: number, open: boolean, progress: Progress | null }>()
 // The kebab-case names are the component contract of the plan.
 
-const emit = defineEmits<{ 'update:open': [open: boolean], 'open-list': [] }>()
+const emit = defineEmits<{ 'update:open': [open: boolean], 'openList': [] }>()
 
 const STEPS: { key: Step, label: string }[] = [
   { key: 'approved', label: 'Approved' },
@@ -29,30 +29,10 @@ const SEGMENTS = [
   { key: 'unknown', label: 'Unknown', color: 'bg-warning' },
 ] as const
 
-const progress = ref<Progress | null>(null)
-let stop: (() => void) | null = null
-
-function stopWatching() {
-  stop?.()
-  stop = null
-}
-
-watch(() => [props.open, props.campaignId] as const, ([open, id]) => {
-  stopWatching()
-  if (!open)
-    return
-  progress.value = null
-  stop = watchProgress(id, (p) => {
-    progress.value = p
-  })
-}, { immediate: true })
-
-onBeforeUnmount(stopWatching)
-
 const fmt = (n: number) => n.toLocaleString('en-US')
 
-const step = computed(() => progress.value ? currentStep(progress.value.status) : 'approved')
-const isDone = computed(() => progress.value?.status === 'completed')
+const step = computed(() => props.progress ? currentStep(props.progress.status) : 'approved')
+const isDone = computed(() => props.progress?.status === 'completed')
 
 function stepState(i: number): 'done' | 'current' | 'todo' {
   const now = STEPS.findIndex(s => s.key === step.value)
@@ -62,7 +42,7 @@ function stepState(i: number): 'done' | 'current' | 'todo' {
 }
 
 const rows = computed(() => CHANNELS
-  .map(c => ({ ...c, p: progress.value?.channels[c.key] as ChannelProgress | undefined }))
+  .map(c => ({ ...c, p: props.progress?.channels[c.key] as ChannelProgress | undefined }))
   .filter(r => r.p && r.p.total > 0) as { key: DeliveryChannel, label: string, p: ChannelProgress }[])
 
 const totals = computed(() => {
@@ -85,8 +65,7 @@ function close() {
 }
 
 function openList() {
-  // eslint-disable-next-line vue/custom-event-name-casing
-  emit('open-list')
+  emit('openList')
   close()
 }
 </script>
@@ -113,7 +92,7 @@ function openList() {
             <span
               class="flex size-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px]"
               :class="{
-                'border-success bg-success text-white': stepState(i) === 'done',
+                'border-success bg-success text-success-foreground': stepState(i) === 'done',
                 'border-primary text-primary': stepState(i) === 'current',
                 'border-border': stepState(i) === 'todo',
               }"

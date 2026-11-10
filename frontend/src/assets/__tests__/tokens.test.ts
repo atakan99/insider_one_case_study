@@ -11,7 +11,7 @@ function block(start: string): string {
 }
 
 describe('outcome colour tokens', () => {
-  for (const token of ['success', 'info']) {
+  for (const token of ['success', 'success-foreground', 'info']) {
     it(`--${token} exists in both themes and in the Tailwind theme`, () => {
       expect(block(':root {')).toMatch(new RegExp(`--${token}: oklch\\(`))
       expect(block('.dark {')).toMatch(new RegExp(`--${token}: oklch\\(`))

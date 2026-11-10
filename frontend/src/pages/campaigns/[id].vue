@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { Campaign } from '@/lib/campaigns'
@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CampaignRequestError, getCampaign, languageName } from '@/lib/campaigns'
-import { getProgress } from '@/lib/delivery'
+import { getProgress, watchProgress } from '@/lib/delivery'
 
 const route = useRoute('/campaigns/[id]')
 const router = useRouter()
@@ -24,11 +24,51 @@ const error = ref('')
 const reviewOpen = ref(false)
 const sendingOpen = ref(false)
 const progress = ref<Progress | null>(null)
+const progressError = ref('')
 const deliveryEl = ref<HTMLElement | null>(null)
+const FALLBACK_MESSAGE = 'Something went wrong. Try again.'
+let stopWatch: (() => void) | null = null
+let loadToken = 0
 
 const fmt = (n: number) => n.toLocaleString('en-US')
 
+function stopWatching() {
+  stopWatch?.()
+  stopWatch = null
+}
+
+// The page owns the progress stream, so that the status, the badge and the buttons follow it.
+function startWatching() {
+  stopWatching()
+  if (!progress.value || !['approved', 'queued', 'sending'].includes(progress.value.status))
+    return
+  stopWatch = watchProgress(id.value, (p) => {
+    progress.value = p
+    progressError.value = ''
+    if (campaign.value)
+      campaign.value.status = p.status
+    if (p.status === 'completed')
+      stopWatching()
+  })
+}
+
+async function refreshProgress() {
+  try {
+    const p = await getProgress(id.value)
+    progress.value = p
+    progressError.value = ''
+    if (campaign.value)
+      campaign.value.status = p.status
+    startWatching()
+  }
+  catch (err) {
+    progressError.value = err instanceof CampaignRequestError ? err.message : FALLBACK_MESSAGE
+  }
+}
+
 async function load() {
+  const mine = ++loadToken
+  stopWatching()
   error.value = ''
   notFound.value = false
   if (!Number.isInteger(id.value) || id.value <= 0) {
@@ -37,18 +77,28 @@ async function load() {
   }
   try {
     const c = await getCampaign(id.value)
+    if (mine !== loadToken)
+      return
     campaign.value = c
     progress.value = null
+    progressError.value = ''
     if (c.status !== 'draft')
-      progress.value = await getProgress(id.value)
+      await refreshProgress()
   }
   catch (err) {
+    if (mine !== loadToken)
+      return
     if (err instanceof CampaignRequestError && (err.status === 404 || err.status === 400))
       notFound.value = true
     else
-      error.value = err instanceof CampaignRequestError ? err.message : 'Something went wrong. Try again.'
+      error.value = err instanceof CampaignRequestError ? err.message : FALLBACK_MESSAGE
   }
 }
+
+onBeforeUnmount(() => {
+  loadToken++
+  stopWatching()
+})
 
 watch(id, load, { immediate: true })
 
@@ -68,6 +118,9 @@ function onApproved(approvedId: number) {
 
 function onRetried(p: Progress) {
   progress.value = p
+  if (campaign.value)
+    campaign.value.status = p.status
+  startWatching()
   sendingOpen.value = true
 }
 
@@ -157,19 +210,25 @@ function onReviewOpen(v: boolean) {
         </CardContent>
       </Card>
 
-      <div v-if="progress" ref="deliveryEl" class="scroll-mt-4">
+      <div v-if="campaign.status !== 'draft'" ref="deliveryEl" class="scroll-mt-4">
         <DeliverySection
+          v-if="progress"
           :campaign-id="campaign.id"
           :progress="progress"
           @view-progress="sendingOpen = true"
           @retried="onRetried"
+          @refresh="refreshProgress"
         />
+        <p v-if="progressError" data-test="progress-error" class="text-destructive text-sm">
+          {{ progressError }}
+        </p>
       </div>
 
       <SendingDialog
         v-if="campaign.status !== 'draft'"
         v-model:open="sendingOpen"
         :campaign-id="campaign.id"
+        :progress="progress"
         @open-list="showList"
       />
 

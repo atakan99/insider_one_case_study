@@ -69,7 +69,7 @@ describe('delivery section', () => {
   it('view progress emits view-progress', async () => {
     const w = await make(prog('sending', { total: 5 }))
     await w.find('[data-test="view-progress"]').trigger('click')
-    expect(w.emitted('view-progress')).toHaveLength(1)
+    expect(w.emitted('viewProgress')).toHaveLength(1)
   })
 
   it('shows Retry only for a completed campaign with retryable failed jobs', async () => {
@@ -111,6 +111,24 @@ describe('delivery section', () => {
     await flushPromises()
     expect(w.emitted('retried')).toBeUndefined()
     expect(w.find('[data-test="retry-error"]').text()).toBe('Nothing to retry.')
+  })
+
+  it('asks the page to refresh after a 409', async () => {
+    retry.mockImplementation(() => Promise.reject(new CampaignRequestError('nothing_to_retry', 'Nothing to retry.', 409, [])))
+    const w = await make()
+    await w.find('[data-test="retry"]').trigger('click')
+    $('[data-test="retry-send"]')!.click()
+    await flushPromises()
+    expect(w.emitted('refresh')).toHaveLength(1)
+  })
+
+  it('does not ask for a refresh after other errors', async () => {
+    retry.mockImplementation(() => Promise.reject(new CampaignRequestError('request_failed', 'x', 500, [])))
+    const w = await make()
+    await w.find('[data-test="retry"]').trigger('click')
+    $('[data-test="retry-send"]')!.click()
+    await flushPromises()
+    expect(w.emitted('refresh')).toBeUndefined()
   })
 
   it('lists the jobs as User #id and hints at unknown', async () => {
