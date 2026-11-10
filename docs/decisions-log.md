@@ -148,3 +148,52 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** A fixed random seed only, a control endpoint that sets the next failure, a header on each request.
 - **Choice:** The `X-Mock-Fail` header sets the mode for one request. The random rates and `MOCK_RANDOM` stay for the demo.
 - **Why:** A header affects one request only. Thus parallel tests do not interfere. A control endpoint keeps state that a parallel test can change.
+
+## D-022 The audience gives the languages, and the backend adds no language filter
+
+- **Context:** The operator writes only the brief. D-013 said that a campaign has one language, and that the compiler adds `language = <campaign language>` to each rule.
+- **Options:** The operator selects the language. The backend selects the biggest language group and excludes the other users. The backend reports each language of the audience.
+- **Choice:** The segment response has a `languages` array. The backend fills it with a `GROUP BY language` on the audience. The compiler adds no language condition. If the brief names a language, Claude puts it in the rule (user decision, 2026-11-10). Slice 05 decides how it uses the array.
+- **Why:** No user is excluded because of language. When a later seed mixes languages in a country, the array gets more entries with no code change. This replaces the campaign-language part of D-013. The `language` and `country` columns of D-013 do not change.
+
+## D-023 The backend writes the rule description
+
+- **Context:** The operator must see what the audience is before content generation.
+- **Options:** Claude writes a summary. The backend makes the text from the validated rule.
+- **Choice:** The backend makes the text from the validated rule, with a fixed phrase for each field and operator.
+- **Why:** A summary from Claude can differ from the rule. The backend text always describes the query that runs.
+
+## D-024 One repair round with the validation errors
+
+- **Context:** Claude can return a rule that fails validation.
+- **Options:** Fail at once. Retry with the same prompt. Send the errors back and ask for a correction, a fixed number of times.
+- **Choice:** Send the validator errors back one time, as a `tool_result` with `is_error: true` for the earlier `tool_use`. If the second answer also fails, return `422`.
+- **Why:** Most errors are small, for example a wrong value type, and the error text lets Claude fix them. One round limits the cost and the wait to two calls.
+
+## D-025 Strict tool schema made from the allowlist
+
+- **Context:** The Anthropic client asks Claude for the tool `submit_segment`. Opus 5.5 and Sonnet 5.5 reject a forced `tool_choice`, so the client sends `tool_choice: auto`. The tool input schema can be loose or strict.
+- **Options:** A loose `{"type": "object"}` schema. A strict schema with enums for the fields, operators and cities.
+- **Choice:** The tool has `strict: true`. `internal/segment` builds its JSON schema from the allowlist and unrolls the 3 levels of the tree, with no `$ref`. The caller gives the tool definition to `internal/llm`. Thus `internal/llm` does not import `internal/segment`. The backend validator still checks every answer.
+- **Why:** A strict schema makes fewer bad answers, so the repair round runs less often. The schema is only a help. The validator is the only gate.
+
+## D-026 Relative times use the wall clock
+
+- **Context:** The seed times are offsets from the seed time. The seed skips when users exist, so the data on an old volume gets older each day.
+- **Options:** The compiler uses the seed time from a stored value. The compiler uses the wall clock.
+- **Choice:** The wall clock, through an injected clock. After about 30 days, the example brief can match no users on an old volume. `SEED_RESET=true` fixes this. The README slice documents it.
+- **Why:** A real system uses the real time. A stored seed time adds a table and couples the api to the seed.
+
+## D-027 Claude Opus 5.5 at low effort, with refusal fallbacks
+
+- **Context:** The segment step is a small extraction. It must be reliable and fast.
+- **Options:** `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`.
+- **Choice:** The default is `claude-opus-5-5`, with effort `low`. `ANTHROPIC_MODEL` can change it. The client asks for server-side refusal fallbacks (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`). If the Go SDK has no binding for this form, it uses the array form `[{model: claude-opus-4-8}]` with beta `server-side-fallback-2026-06-01`.
+- **Why:** The Claude API guide sets Opus 5.5 as the default model. Low effort keeps the call fast and cheap for a short extraction. The fallback lets a false refusal of a normal marketing brief still give an answer.
+
+## D-028 CORS on the api
+
+- **Context:** The frontend runs on port 3000 (nginx) or 5173 (`pnpm dev`). It calls the api on port 8080. The browser treats this as a different origin.
+- **Options:** A proxy in nginx and Vite. CORS headers on the api.
+- **Choice:** The api sends CORS headers for the origins in `CORS_ORIGINS`. The default is `http://localhost:3000,http://localhost:5173`. The api answers `OPTIONS` preflight requests.
+- **Why:** The frontend already calls `VITE_SERVER_API_URL` directly. CORS needs no change in the nginx and Vite configs.

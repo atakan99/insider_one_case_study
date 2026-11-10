@@ -17,7 +17,7 @@ The data must be realistic enough for a demo. It must also contain the edge case
 - User decisions of 2026-11-06:
   - Users are in two countries only: Turkey (`TR`) and the US (`US`).
   - Each user has a `language` and a `country` column. In this slice the language follows the country: `TR` users are `tr`, `US` users are `en`.
-  - A campaign has one message language. A later slice can add campaigns with several languages and a new seed with mixed languages. See D-013.
+  - A campaign has one message language. A later slice can add campaigns with several languages and a new seed with mixed languages. See D-013. Slice 04 replaced this: see D-022.
   - Amounts are in Turkish lira (TRY) for all users.
 
 ## Output
@@ -71,7 +71,7 @@ The `events` table keeps the real history. The seed calculates the summary colum
 
 ### Campaign language
 
-Each campaign has one message language. The segment compiler in slice 04 adds `language = <campaign language>` to each rule. Thus a Turkish campaign never reaches an `en` user. The index on `users.language` keeps this filter fast.
+Each campaign has one message language. The segment compiler in slice 04 adds `language = <campaign language>` to each rule. Thus a Turkish campaign never reaches an `en` user. Slice 04 replaced this: the audience gives the languages, and the compiler adds no language condition. See D-022. The index on `users.language` keeps this filter fast.
 
 ## Distribution
 
