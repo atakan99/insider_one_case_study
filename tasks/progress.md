@@ -85,3 +85,12 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Open questions:
   - Five Minor review items stay open. See the final message of the session.
   - Slice 07 must widen the `campaigns.status` CHECK and keep `approved_at` set for the later statuses.
+
+## 2026-11-10 — 07-send-queue
+- Done: slice 07 send queue. Added a migration for the new campaign statuses and `send_jobs`. Added `internal/delivery` (planner, Redis streams, limiter, sender, retry, recovery) and `cmd/worker`. Added four endpoints: progress, progress stream, send-jobs and retry. Added the sending popup, the delivery section and the status badges. Added D-046 to D-065 and the architecture Flow step 4.
+- Verified with: `make verify` exit 0. A compose run with `-p cc-verify` on ports 13000, 18080, 18081 and 18082 (the running stack holds 3000, 8080 and 8081). The worker `/healthz` gave `{"db":"ok","redis":"ok","status":"ok"}`. The example brief gave campaign 1 with email 148 and SMS 101. The campaign went to `completed`. The final progress was SMS 95 sent and 6 unknown, email 142 sent and 6 unknown. `GET /v1/stats` gave `duplicate_deliveries: 0` for both channels, and `rate_limited: 0` for 257 requests. The retry gave `409 nothing_to_retry`. Headless Chrome at 1280 px and 360 px completed the flow to Done and showed the list and the retry button. Both widths had no horizontal scroll. The retry button run used three send jobs that I set to `failed` in the temporary database. Thus that run shows duplicate deliveries in its stats, and the retry itself ran from the popup.
+- Next: user review of slice 07. The user sets `07-send-queue.passes`. Then slice 08-dashboard-metrics.
+- Open questions:
+  - There is one worker replica. A shared rate limiter is a non-goal.
+  - `unknown` send jobs are never retried.
+  - The progress stream has no SSE keepalive comment.

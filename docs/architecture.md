@@ -4,6 +4,7 @@
 
 - **api** — Go HTTP API. Health endpoints, campaigns, segments, content and send status.
 - **mock-provider** — Go service that acts as an SMS and email provider, like Twilio or SendGrid. It sometimes returns `429`, `5xx`, slow responses and lost responses. It does no dedup (D-018).
+- **worker** — Go service. It plans approved campaigns, sends the messages to the mock provider and reports `/healthz` on port 8082 (D-046 to D-065).
 - **seed** — Go one-shot job. It applies the migrations, loads the seed users, then exits (D-015). The api starts after it completes.
 - **postgres** — the datastore (D-002).
 - **redis** — the send queue, with Redis Streams (D-007).
@@ -69,7 +70,15 @@ ai-sessions/
    - The service counts the audience before it locks the row. The approval then locks the campaign row and checks the status in one transaction. A repeated approval returns the campaign and changes nothing (D-039).
    - Database triggers block a change of the content, the brief, the rule and the approval time after approval (D-040).
    - The campaign stores the counts at the last save, but no recipient list (D-041). The send step gets the recipients at send time.
-4. **Send** — A queue sends the messages to the mock provider.
+4. **Send** — The worker plans and sends the messages.
    - The mock provider delivers each request, also a repeat. The worker owns the dedup. It does not retry after a timeout or a dropped connection (D-018, D-019).
+   - The approval does not touch Redis. The worker finds approved campaigns and writes one `send_jobs` row for each reachable user and channel. The unique key blocks a second plan (D-050). The campaign becomes `queued`.
+   - Each channel has one Redis stream. An entry holds only the send job id. Postgres holds the delivery status (D-051, D-052).
+   - 32 consumers for each channel read the stream (D-049). Each consumer waits for a rate-limit token, then claims the send job with one conditional `UPDATE`. The claim is the dedup gate (D-053, D-046).
+   - The consumer checks consent again and renders the message. It sends one request for each attempt. A connection error before the write gives a retry. A timeout or a lost connection after the write gives `unknown` (D-057, D-058).
+   - A failed attempt that can work later gives `retrying` with `next_attempt_at`. The delay is 1, 2, 4 and 8 s with 20% jitter, for 5 attempts at most. A retry poller every 500 ms puts due retries on the stream (D-047, D-054, D-055).
+   - Recovery runs in the worker. It puts old `queued` and due `retrying` send jobs on the stream again. It sets a `sending` send job that hangs to `unknown`. It gives the entry of a dead consumer to a live consumer. It sets a campaign to `completed` when no send job is open (D-056).
+   - `POST /api/campaigns/{id}/retry` sets the retryable `failed` send jobs of a `completed` campaign to `queued` with `attempts = 0`. The campaign becomes `sending` (D-059, D-060).
+   - `GET /api/campaigns/{id}/progress` and its stream give the counts. `GET /api/campaigns/{id}/send-jobs` gives the list with user ids only (D-061).
 5. **Live status** — The dashboard shows the delivery status.
    - TBD per slice.

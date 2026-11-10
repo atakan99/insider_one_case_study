@@ -316,3 +316,143 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Handle each close event. Handle the dialog `update:open` event.
 - **Choice:** All close paths go through the dialog `update:open` event, which asks first when edits are not saved. The subject uses a single-line input, so the browser drops line breaks. The backend still rejects `\n` and `\r` in the subject.
 - **Why:** One path cannot miss a way to close. A browser cannot send a line break from a single-line input, so the browser check is for paste only, and the backend is the gate.
+
+## D-046 The claim is one conditional UPDATE
+
+- **Context:** Two consumers can get the same stream entry. Redis delivers at least once. The mock provider does no dedup (D-018).
+- **Options:** A Redis lock for each send job. A Postgres row lock. One conditional `UPDATE`.
+- **Choice:** The claim is one `UPDATE` that sets `sending` and counts the attempt only when the status is `queued` or `retrying`. A consumer that updates no row drops the entry.
+- **Why:** The database already holds the delivery status. One statement is atomic. Thus Redis is not the dedup gate and the worker needs no second lock.
+
+## D-047 Five attempts with backoff
+
+- **Context:** The mock provider returns `429` and `5xx` at random. The worker must retry without a storm.
+- **Options:** A fixed delay. Exponential backoff with no jitter. Exponential backoff with jitter.
+- **Choice:** The worker makes 5 attempts at most. The delay before attempts 2, 3, 4 and 5 is 1, 2, 4 and 8 s, plus up to 20% jitter. A `429` counts as an attempt and pauses the channel for `Retry-After`.
+- **Why:** Jitter spreads the retries. A pause on the channel stops all consumers from hitting a provider that asked for a wait.
+
+## D-048 The attempt timeout is 3 s
+
+- **Context:** The `slow` response of the mock provider takes 3 s.
+- **Options:** A timeout above the slow delay. A timeout below the slow delay.
+- **Choice:** `SEND_TIMEOUT` defaults to 3 s. A `slow` response times out and gives `unknown`.
+- **Why:** A timeout is ambiguous, because the provider can have sent the message (D-019). The worker does not retry it.
+
+## D-049 32 consumers for each channel
+
+- **Context:** The target is 100 requests per second for each channel. Each `slow` response holds one consumer for 3 s.
+- **Options:** Few consumers. 32 consumers. One goroutine for each send job.
+- **Choice:** `SEND_CONSUMERS` defaults to 32 for each channel.
+- **Why:** The rate limiter is the cap, not the consumers. 32 consumers keep 100 requests per second even when some wait for a `slow` response.
+
+## D-050 The worker plans approved campaigns
+
+- **Context:** The approval is one Postgres transaction (D-040). A push to Redis in the same request can fail on its own.
+- **Options:** The approval pushes to Redis. The worker plans the approved campaigns.
+- **Choice:** The worker finds the `approved` campaigns and writes the `send_jobs` rows. The unique key on campaign, user and channel blocks a second plan. Then the campaign becomes `queued`.
+- **Why:** The approval stays one transaction and does not need Redis. A crash after the plan and before the push is safe, because the recovery pushes the send jobs again (FR-27).
+
+## D-051 One stream for each channel
+
+- **Context:** A slow SMS provider must not stop the email channel.
+- **Options:** One stream for all channels. One stream for each channel.
+- **Choice:** SMS and email each have a stream, a consumer group, a consumer pool and a rate limiter.
+- **Why:** The two channels share no resource that can block them (FR-20).
+
+## D-052 A stream entry has only the send job id
+
+- **Context:** The stream must not hold a second copy of the message or the user.
+- **Options:** Put the full message in the entry. Put only the id.
+- **Choice:** The entry has the field `job` with the send job id. Postgres is the record of the delivery status. The stream has `MAXLEN ~ 1000000`. The consumer group starts at `0`, so entries that came before the group are delivered. A consumer acknowledges and drops a poison entry (no `job` field, or a value that is not a number).
+- **Why:** The entry holds no personal data. A lost or repeated entry cannot change the delivery status. A poison entry would block the group if the worker kept it.
+
+## D-053 The worker waits for a token before it claims
+
+- **Context:** A consumer can wait a long time for a rate-limit token. A claimed send job would show `sending` while it waits.
+- **Options:** Claim, then wait. Wait, then claim.
+- **Choice:** The consumer waits for a token first, then claims. The limiter checks the `429` pause again after the token wait. On `SIGTERM`, a send job that the worker claimed but did not send goes back to `queued`. Only a crash or a started request gives `unknown`. There is one worker replica, with the limiter in the process. A shared limiter is a non-goal.
+- **Why:** The `sending` status then means that a request is in progress or started. A stop during a wait loses no message and creates no false `unknown`.
+
+## D-054 A delayed retry waits in Postgres
+
+- **Context:** A retry has a delay of up to 8 s.
+- **Options:** A Redis sorted set. A delayed entry in the stream. A `next_attempt_at` column.
+- **Choice:** A `retrying` send job keeps `next_attempt_at` in Postgres. The worker puts it on the stream when the time has come.
+- **Why:** Postgres is already the record. After a crash, the recovery finds the same rows. No second store needs a repair.
+
+## D-055 A retry poller runs every 500 ms
+
+- **Context:** The recovery runs every 5 s. A retry with a 1 s delay cannot wait for it.
+- **Options:** Use only the recovery. Add a fast poller.
+- **Choice:** A poller every 500 ms puts due retries on the stream. It keeps an in-memory set of the retries that it pushed and does not push one again for 30 s. The recovery is the fallback.
+- **Why:** A due retry goes on the stream within 1 s (FR-12). The set stops repeat pushes that waste limiter tokens.
+
+## D-056 A hanging `sending` send job becomes `unknown`
+
+- **Context:** After a crash, a send job can stay in `sending`. The worker can have sent the message.
+- **Options:** Set it to `queued`. Set it to `unknown`.
+- **Choice:** A `sending` send job older than `SEND_TIMEOUT` plus 30 s becomes `unknown`. `Worker.StaleAfter` (default 120 s) is a test hook for the `queued` recovery. `Release` and `CompleteCampaigns` use the database clock. The other store methods use the time that the caller passes.
+- **Why:** A retry could send the message two times. The database clock avoids a difference between the worker and the database.
+
+## D-057 The worker checks consent and renders at send time
+
+- **Context:** Consent and the first name can change between the plan and the send. The hard rules need consent for each send.
+- **Options:** Store the rendered text at the plan. Render at send time.
+- **Choice:** The worker reads the user again, checks the consent of the channel and renders the message. The status `skipped` records why the worker did not send: `no_consent` or `over_limit`. A user who no longer exists gives `skipped` with `no_consent`. A rule that does not parse at plan time gives a `completed` campaign with no send jobs, and the worker logs the error.
+- **Why:** The worker never sends without the current consent. It never sends a text over the limits (FR-16, FR-17).
+
+## D-058 `httptrace` tells "not sent" from "maybe sent"
+
+- **Context:** A connection error can happen before or after the request leaves. Only the first case is safe to retry (D-019).
+- **Options:** Treat each error as ambiguous. Read the error text. Trace the write.
+- **Choice:** The sender uses `httptrace` `WroteRequest`. A connection error before the write gives a retry. A timeout or a lost connection after the write gives `unknown`. `Provider.Send` runs on a context without cancel. `HTTP.Timeout` bounds it, so started requests finish during shutdown.
+- **Why:** The trace gives a fact, not a guess from an error string. A request that already started finishes, so shutdown does not create an unknown result.
+
+## D-059 A `retryable` column marks the failed send jobs
+
+- **Context:** The marketer can retry only some failed send jobs. A `400` stays failed.
+- **Options:** The api parses `last_error`. A column.
+- **Choice:** The worker sets `retryable` when it ends a send job as `failed`. The retry endpoint uses it and the campaign must be `completed`. `last_error` stays after a later `sent`. The spec wins over the plan line "LastError is o.Err in each case".
+- **Why:** The api does not depend on the format of an error text. The history of the last error stays for the support view.
+
+## D-060 The retry sets `attempts` to 0
+
+- **Context:** A retried send job is at its limit of 5 attempts.
+- **Options:** Keep the count. Reset the count.
+- **Choice:** The retry sets `attempts` to 0 and the status to `queued`. The campaign becomes `sending`. A second retry at the same time gets `409`.
+- **Why:** The marketer expects a full new set of attempts. A reset is easy to explain.
+
+## D-061 Progress and list limits
+
+- **Context:** The page needs live counts and a list of send jobs without personal data.
+- **Options:** Send each change. Send at most one event for each second. Poll only.
+- **Choice:** The progress stream sends at most one event for each second. The list returns the user id only. ListJobs has a default limit of 50 and a maximum of 200. The service checks the campaign first, so an unknown id gives `404` and a draft gives `409`.
+- **Why:** One event for each second is enough for a bar. A list with ids only holds no personal data (NFR-3).
+
+## D-062 `go-redis/v9` is the Redis client
+
+- **Context:** The worker needs streams, consumer groups, `XAUTOCLAIM` and a blocking read.
+- **Options:** `go-redis/v9`. `rueidis`. A hand-written client.
+- **Choice:** `github.com/redis/go-redis/v9`. The pool size is `2*Consumers+16`, because each blocking `XREADGROUP` holds one connection.
+- **Why:** It is the common client with full stream support. A pool that is too small would starve the blocking consumers.
+
+## D-063 Outcome colours are theme tokens
+
+- **Context:** The send views show five outcomes. FR-46 needs theme tokens for the light and dark themes.
+- **Options:** Fixed colours. New tokens.
+- **Choice:** Add `--success`, `--success-foreground` and `--info` for both themes. Sent is success, retrying is info, failed is destructive and unknown is warning.
+- **Why:** The popup and the list then change with the theme.
+
+## D-064 The seed reset also clears `send_jobs`
+
+- **Context:** `send_jobs.user_id` references `users`. `SEED_RESET=true` truncates `users`.
+- **Options:** Leave `send_jobs`. Truncate it too.
+- **Choice:** The seed reset also truncates `send_jobs`.
+- **Why:** The truncate of `users` would fail with a foreign key error.
+
+## D-065 The page owns the progress stream
+
+- **Context:** The page and the popup both show progress. After a stream error, the page needs a fallback.
+- **Options:** The popup opens its own stream. The page opens one stream and passes progress as a prop.
+- **Choice:** The page owns the stream. A 409 on retry makes the page refresh its progress. After a stream error, the page polls `GET .../progress` every 2 s and does not open the stream again.
+- **Why:** One stream avoids two sources that disagree. Polling is simple and the data is the same (FR-40).
