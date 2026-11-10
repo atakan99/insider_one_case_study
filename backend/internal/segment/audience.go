@@ -110,11 +110,17 @@ GROUP BY language`
 // Channel is a message channel. The zero value is not valid.
 type Channel struct{ column string }
 
-// SMS and Email are the only valid channels.
-var (
-	SMS   = Channel{"sms_consent"}
-	Email = Channel{"email_consent"}
+// Column names for the two valid channels. Constants cannot change at run time.
+const (
+	smsColumn   = "sms_consent"
+	emailColumn = "email_consent"
 )
+
+// SMS returns the SMS channel.
+func SMS() Channel { return Channel{smsColumn} }
+
+// Email returns the email channel.
+func Email() Channel { return Channel{emailColumn} }
 
 // ErrInvalidChannel means the channel is the zero value.
 var ErrInvalidChannel = errors.New("segment: invalid channel")
@@ -132,7 +138,9 @@ type Recipient struct {
 // Recipients returns the users that match w and consent to ch, ordered by id.
 // It is the only function that returns user rows.
 func Recipients(ctx context.Context, pool *pgxpool.Pool, w Where, ch Channel) ([]Recipient, error) {
-	if ch != SMS && ch != Email {
+	switch ch.column {
+	case smsColumn, emailColumn:
+	default:
 		return nil, ErrInvalidChannel
 	}
 	q := `SELECT id, first_name, last_name, email, phone, language

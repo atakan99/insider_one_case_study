@@ -214,8 +214,8 @@ func TestRecipients_Consent(t *testing.T) {
 		ch   Channel
 		ok   func(seed.User) bool
 	}{
-		{"sms", SMS, func(u seed.User) bool { return u.SMSConsent }},
-		{"email", Email, func(u seed.User) bool { return u.EmailConsent }},
+		{"sms", SMS(), func(u seed.User) bool { return u.SMSConsent }},
+		{"email", Email(), func(u seed.User) bool { return u.EmailConsent }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rs, err := Recipients(ctx, pool, w, tc.ch)
@@ -249,6 +249,9 @@ func TestRecipients_Consent(t *testing.T) {
 	}
 	if _, err := Recipients(ctx, pool, w, Channel{}); err != ErrInvalidChannel {
 		t.Errorf("zero channel err = %v, want ErrInvalidChannel", err)
+	}
+	if _, err := Recipients(ctx, pool, w, Channel{column: "id > 0 OR true"}); err != ErrInvalidChannel {
+		t.Errorf("unknown column err = %v, want ErrInvalidChannel", err)
 	}
 }
 
