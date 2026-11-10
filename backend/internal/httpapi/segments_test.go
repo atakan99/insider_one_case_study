@@ -120,7 +120,7 @@ func jsonEq(a, b any) bool {
 }
 
 func TestPreview_BadBody(t *testing.T) {
-	for _, body := range []string{strings.Repeat("a", 16*1024+1), "{", "{}"} {
+	for _, body := range []string{briefBody(strings.Repeat("a", 16*1024)), "{", "{}"} {
 		rec := post(newPreview(llm.NewMock(), &fakeCount{}), body)
 		if rec.Code != 400 || decodeErr(t, rec).Error.Code != "invalid_request" {
 			t.Errorf("%.10q: %d %s", body, rec.Code, rec.Body)
