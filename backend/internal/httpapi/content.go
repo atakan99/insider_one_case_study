@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/content"
 	"campaigncomposer/internal/llm"
 	"campaigncomposer/internal/segment"
@@ -25,7 +26,17 @@ type ContentGenerator struct {
 	Clock      func() time.Time // draft throttle clock; tests inject it
 	LLMTimeout time.Duration    // timeout of each LLM call
 	DraftEvery time.Duration    // minimum time between two drafts of a language
+	Drafts     DraftSaver       // stores the draft at the end; nil saves nothing
 }
+
+// DraftSaver stores the draft at the end of a content stream.
+type DraftSaver interface {
+	CreateDraft(ctx context.Context, d campaign.Draft) (int64, error)
+	ReplaceDraft(ctx context.Context, id int64, d campaign.Draft) error
+}
+
+// draftSaveTimeout limits the draft save at the end of the stream.
+const draftSaveTimeout = 2 * time.Second
 
 // RegisterContent adds POST /api/content/generate.
 func RegisterContent(mux *http.ServeMux, g *ContentGenerator) {
@@ -53,6 +64,23 @@ type finalEvent struct {
 	Limits   content.Limits  `json:"limits"`
 }
 
+type campaignEvent struct {
+	ID     int64           `json:"id"`
+	Status campaign.Status `json:"status"`
+}
+
+// streamErrorEvent is an error event with no language.
+type streamErrorEvent struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// langResult is the outcome of one language. final is nil when it failed.
+type langResult struct {
+	lang  segment.LanguageCounts
+	final *finalEvent
+}
+
 type languageErrorEvent struct {
 	Language string               `json:"language"`
 	Code     string               `json:"code"`
@@ -65,10 +93,12 @@ const noContentToolText = "You did not call " + content.ToolName + ". Do not rep
 func (g *ContentGenerator) generate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in struct {
-		Brief string          `json:"brief"`
-		Rule  json.RawMessage `json:"rule"`
+		Brief      string          `json:"brief"`
+		Rule       json.RawMessage `json:"rule"`
+		CampaignID *int64          `json:"campaign_id"`
 	}
-	if err := decodeBody(w, r, &in); err != nil || in.Brief == "" || isAbsentJSON(in.Rule) {
+	if err := decodeBody(w, r, &in); err != nil || in.Brief == "" || isAbsentJSON(in.Rule) ||
+		(in.CampaignID != nil && *in.CampaignID <= 0) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "The request body must be JSON with a brief and a rule, of at most 16 KiB.", nil)
 		return
 	}
@@ -112,25 +142,80 @@ func (g *ContentGenerator) generate(w http.ResponseWriter, r *http.Request) {
 
 	// One worker for each language. A failure in one language does not cancel
 	// the others; only the end of the request context cancels them all.
+	results := make([]langResult, len(langs))
 	var wg sync.WaitGroup
-	for _, l := range langs {
+	for i, l := range langs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			g.runLanguage(ctx, sse, l, description, brief)
+			results[i] = langResult{lang: l, final: g.runLanguage(ctx, sse, l, description, brief)}
 		}()
 	}
 	wg.Wait()
 	if ctx.Err() != nil {
+		// The marketer did not see the result, so no draft is saved.
 		slog.InfoContext(ctx, "content generate: client disconnected", "languages", len(langs))
 		return
+	}
+	ruleJSON, err := rule.MarshalJSON()
+	if err == nil {
+		g.saveDraft(ctx, sse, in.CampaignID, campaign.Draft{Brief: brief, Description: description, Rule: ruleJSON}, results)
+	} else {
+		slog.ErrorContext(ctx, "content generate: marshal rule", "err", err)
+		_ = sse.send("error", streamErrorEvent{Code: "draft_not_saved", Message: "The draft could not be saved. Try again."})
 	}
 	_ = sse.send("done", struct{}{})
 }
 
+// saveDraft stores the final languages as a draft and sends the campaign event.
+// It saves nothing when no language is final.
+func (g *ContentGenerator) saveDraft(ctx context.Context, sse *sseWriter, id *int64, d campaign.Draft, results []langResult) {
+	if g.Drafts == nil {
+		return
+	}
+	d.Skipped = []string{}
+	for _, r := range results {
+		if r.final == nil {
+			d.Skipped = append(d.Skipped, r.lang.Code)
+			continue
+		}
+		d.Contents = append(d.Contents, campaign.LanguageContent{
+			Language: r.lang.Code, Content: r.final.Content,
+			SMSCount: r.lang.SMS, EmailCount: r.lang.Email, FirstNameRunes: int(r.lang.MaxFirstName),
+		})
+	}
+	if len(d.Contents) == 0 {
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, draftSaveTimeout)
+	defer cancel()
+	var err error
+	var saved int64
+	if id == nil {
+		saved, err = g.Drafts.CreateDraft(sctx, d)
+	} else {
+		saved = *id
+		err = g.Drafts.ReplaceDraft(sctx, saved, d)
+	}
+	switch {
+	case err == nil:
+		slog.InfoContext(ctx, "content generate: draft saved", "campaign_id", saved, "replaced", id != nil,
+			"languages", len(d.Contents), "skipped", d.Skipped)
+		_ = sse.send("campaign", campaignEvent{ID: saved, Status: campaign.StatusDraft})
+	case errors.Is(err, campaign.ErrConflict), errors.Is(err, campaign.ErrNotFound):
+		slog.WarnContext(ctx, "content generate: draft conflict", "campaign_id", saved, "err", err)
+		_ = sse.send("error", streamErrorEvent{Code: "campaign_conflict",
+			Message: "This draft cannot be updated. Find the audience again to start a new campaign."})
+	default:
+		slog.ErrorContext(ctx, "content generate: draft save failed", "err", err)
+		_ = sse.send("error", streamErrorEvent{Code: "draft_not_saved", Message: "The draft could not be saved. Try again."})
+	}
+}
+
 // runLanguage streams the content of one language, with one repair round,
-// and sends its final or error event.
-func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang segment.LanguageCounts, description, brief string) {
+// and sends its final or error event. It returns the final event, or nil when
+// the language failed or the request ended.
+func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang segment.LanguageCounts, description, brief string) *finalEvent {
 	code := lang.Code
 	firstName := int(lang.MaxFirstName)
 	req := llm.Request{
@@ -157,18 +242,18 @@ func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang
 		if err != nil {
 			if ctx.Err() != nil {
 				slog.InfoContext(ctx, "content generate: cancelled", "language", code, "attempts", attempts)
-				return
+				return nil
 			}
 			if errors.Is(err, context.DeadlineExceeded) {
 				fail(attempts, "llm_timeout", "The language model took too long to answer.", nil, err)
 			} else {
 				fail(attempts, "llm_error", "The language model call failed.", nil, err)
 			}
-			return
+			return nil
 		}
 		if resp.Refused {
 			fail(attempts, "llm_refused", "The language model refused this brief.", nil, nil)
-			return
+			return nil
 		}
 		d.flush()
 
@@ -191,12 +276,13 @@ func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang
 			slog.InfoContext(ctx, "content generate", "language", code, "attempts", attempts, "outcome", "final",
 				"first_name_runes", limits.FirstNameRunes, "sms_runes", limits.SMSRunes,
 				"email_subject_runes", limits.EmailSubjectRunes, "email_body_runes", limits.EmailBodyRunes)
-			_ = sse.send("final", finalEvent{Language: code, Content: c, Limits: limits})
-			return
+			fe := finalEvent{Language: code, Content: c, Limits: limits}
+			_ = sse.send("final", fe)
+			return &fe
 		}
 		if attempts >= 2 {
 			fail(attempts, "content_invalid", "The language model could not write valid content for this language. Try rewording the brief.", errs, nil)
-			return
+			return nil
 		}
 		slog.InfoContext(ctx, "content generate: validation failed", "language", code, "attempts", attempts, "errors", errs)
 		_ = sse.send("retry", retryEvent{Language: code, Errors: errs})

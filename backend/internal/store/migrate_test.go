@@ -68,3 +68,39 @@ SELECT id,'cart_add',10,now() FROM users LIMIT 1`); err == nil {
 		t.Error("cart_add with amount accepted")
 	}
 }
+
+func TestMigrate_CampaignTriggers(t *testing.T) {
+	ctx, conn := migrated(t)
+	var id int64
+	if err := conn.QueryRow(ctx, `INSERT INTO campaigns (brief, rule, description, status, created_at, updated_at)
+VALUES ('b', '{"op":"and","conditions":[]}', 'd', 'draft', now(), now()) RETURNING id`).Scan(&id); err != nil {
+		t.Fatalf("insert campaign: %v", err)
+	}
+	insContent := `INSERT INTO campaign_contents (campaign_id, language, sms, email_subject, email_body, sms_count, email_count, first_name_runes)
+VALUES ($1, $2, 's', 'subj', 'body', 1, 1, 5)`
+	if _, err := conn.Exec(ctx, insContent, id, "tr"); err != nil {
+		t.Fatalf("insert content: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `UPDATE campaign_contents SET sms = 's2' WHERE campaign_id = $1`, id); err != nil {
+		t.Fatalf("update draft content: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `UPDATE campaigns SET status = 'approved', approved_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	fails := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"update sms", `UPDATE campaign_contents SET sms = 'x' WHERE campaign_id = $1`, []any{id}},
+		{"delete content", `DELETE FROM campaign_contents WHERE campaign_id = $1`, []any{id}},
+		{"insert content", insContent, []any{id, "en"}},
+		{"update brief", `UPDATE campaigns SET brief = 'x' WHERE id = $1`, []any{id}},
+		{"back to draft", `UPDATE campaigns SET status = 'draft' WHERE id = $1`, []any{id}},
+	}
+	for _, f := range fails {
+		if _, err := conn.Exec(ctx, f.sql, f.args...); err == nil {
+			t.Errorf("%s: want error after approval, got nil", f.name)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/config"
 	"campaigncomposer/internal/httpapi"
 	"campaigncomposer/internal/llm"
@@ -80,7 +81,19 @@ func run() error {
 		Now:        time.Now,
 		LLMTimeout: 20 * time.Second,
 	})
-	httpapi.RegisterContent(mux, newContentGenerator(llmClient, segment.Default(), count))
+	campaigns := campaign.NewStore(pool)
+	gen := newContentGenerator(llmClient, segment.Default(), count)
+	gen.Drafts = campaigns
+	httpapi.RegisterContent(mux, gen)
+	httpapi.RegisterCampaigns(mux, &campaign.Service{
+		Store: campaigns,
+		Allow: segment.Default(),
+		Count: campaign.AudienceCounter(count),
+		Sample: func(ctx context.Context, w segment.Where, langs []string, n int) (map[string][]string, error) {
+			return segment.SampleFirstNames(ctx, pool, w, langs, n)
+		},
+		Now: time.Now,
+	})
 
 	// No WriteTimeout: the content SSE stream can last 90 s (NFR-9).
 	srv := &http.Server{

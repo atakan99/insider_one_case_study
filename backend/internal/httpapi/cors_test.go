@@ -49,3 +49,14 @@ func TestCORS_UnknownOrigin(t *testing.T) {
 		t.Error("missing Vary")
 	}
 }
+
+func TestCORS_AllowsPut(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/api/campaigns/1/contents", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "PUT")
+	rec := httptest.NewRecorder()
+	corsHandler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Header().Get("Access-Control-Allow-Methods"), "PUT") {
+		t.Errorf("methods %q", rec.Header().Get("Access-Control-Allow-Methods"))
+	}
+}

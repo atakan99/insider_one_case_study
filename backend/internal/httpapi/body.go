@@ -16,7 +16,12 @@ var errTrailingData = errors.New("httpapi: trailing data after JSON body")
 // extra bytes come after a valid value, for example whitespace padding.
 // Data after the value, other than whitespace, also fails.
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	return decodeBodyLimit(w, r, v, maxBodyBytes)
+}
+
+// decodeBodyLimit is decodeBody with a given byte limit.
+func decodeBodyLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		return err
 	}
