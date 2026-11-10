@@ -76,7 +76,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Distroless images have no shell, so api and mock-provider have no
+  # Distroless images have no shell, so api, worker and mock-provider have no
   # container healthcheck. `make up` checks them with curl.
   mock-provider:
     build:
@@ -99,6 +99,33 @@ services:
       MOCK_RANDOM: ${MOCK_RANDOM:-}
     ports:
       - "8081:8081"
+
+  # Plans approved campaigns and sends the messages (docs/specs/07-send-queue).
+  # No env_file: the worker must not get the API key. Compose reads the SEND_*
+  # values from .env.
+  worker:
+    build:
+      context: .
+      target: go-service
+      args:
+        CMD: worker
+    environment:
+      DATABASE_URL: postgres://campaign:campaign@postgres:5432/campaign?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      PROVIDER_URL: http://mock-provider:8081
+      SEND_RATE_PER_SEC: ${SEND_RATE_PER_SEC:-100}
+      SEND_MAX_ATTEMPTS: ${SEND_MAX_ATTEMPTS:-5}
+      SEND_TIMEOUT: ${SEND_TIMEOUT:-3s}
+      SEND_CONSUMERS: ${SEND_CONSUMERS:-32}
+    ports:
+      - "8082:8082"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mock-provider:
+        condition: service_started
 
   frontend:
     build:

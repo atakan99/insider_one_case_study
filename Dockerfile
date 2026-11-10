@@ -4,7 +4,7 @@
 #
 #   docker build --target frontend .
 
-# ---- Go binaries (cmd/api, cmd/mockprovider, cmd/seed, later cmd/worker) ----
+# ---- Go binaries (cmd/api, cmd/mockprovider, cmd/seed, cmd/worker) ----
 FROM golang:1.27-alpine AS go-build
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./

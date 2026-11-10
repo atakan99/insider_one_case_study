@@ -32,6 +32,11 @@ const trUSRule = `{"op":"and","conditions":[{"field":"country","op":"in","value"
 
 func seeded(t *testing.T) (context.Context, *pgxpool.Pool, *Store) {
 	t.Helper()
+	return seededN(t, 500)
+}
+
+func seededN(t *testing.T, users int) (context.Context, *pgxpool.Pool, *Store) {
+	t.Helper()
 	url := storetest.NewDB(t)
 	ctx := context.Background()
 	if err := store.Migrate(ctx, url); err != nil {
@@ -42,7 +47,7 @@ func seeded(t *testing.T) (context.Context, *pgxpool.Pool, *Store) {
 		t.Fatalf("pool: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	if _, err := seed.Load(ctx, pool, seed.Options{Random: 42, Now: testNow, Users: 500}, false); err != nil {
+	if _, err := seed.Load(ctx, pool, seed.Options{Random: 42, Now: testNow, Users: users}, false); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	return ctx, pool, NewStore(pool)

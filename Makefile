@@ -37,6 +37,8 @@ up:
 	@echo
 	curl -fsS --retry 15 --retry-delay 2 --retry-all-errors --retry-max-time 30 localhost:8081/healthz
 	@echo
+	curl -fsS --retry 15 --retry-delay 2 --retry-all-errors --retry-max-time 30 localhost:8082/healthz
+	@echo
 	curl -fsS --retry 15 --retry-delay 2 --retry-all-errors --retry-max-time 30 -o /dev/null -w "frontend %{http_code}\n" localhost:3000/
 
 down:
