@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	groupName    = "workers"
-	jobField     = "job"
-	streamMaxLen = 100000
+	groupName = "workers"
+	jobField  = "job"
+	// streamMaxLen is an approximate cap. The worker recovery pushes the queued
+	// send jobs from Postgres again, so a trimmed entry is not lost.
+	streamMaxLen = 1000000
 )
 
 // Entry is one queue entry: the stream id and the send job id.
@@ -37,10 +39,11 @@ func NewQueue(rdb *redis.Client, consumer string) *Queue {
 
 func streamKey(ch Channel) string { return "send:" + string(ch) }
 
-// Ensure creates the streams and the group. A group that exists is not an error.
+// Ensure creates the streams and the group, from the start of the stream so
+// that entries pushed before Ensure are delivered. A group that exists is not an error.
 func (q *Queue) Ensure(ctx context.Context) error {
 	for _, ch := range Channels {
-		err := q.rdb.XGroupCreateMkStream(ctx, streamKey(ch), groupName, "$").Err()
+		err := q.rdb.XGroupCreateMkStream(ctx, streamKey(ch), groupName, "0").Err()
 		if err != nil && !strings.HasPrefix(err.Error(), "BUSYGROUP") {
 			return fmt.Errorf("create group on %s: %w", streamKey(ch), err)
 		}
@@ -69,7 +72,8 @@ func (q *Queue) Push(ctx context.Context, ch Channel, ids []int64) error {
 }
 
 // Read returns up to n new entries for this consumer. It waits up to block
-// for the first entry. It returns no entries and no error on timeout.
+// for the first entry. If block is 0 or less, it does not block. It returns
+// no entries and no error on timeout.
 func (q *Queue) Read(ctx context.Context, ch Channel, n int, block time.Duration) ([]Entry, error) {
 	if block <= 0 {
 		block = -1 // go-redis omits BLOCK for a negative value
@@ -89,7 +93,11 @@ func (q *Queue) Read(ctx context.Context, ch Channel, n int, block time.Duration
 	}
 	var out []Entry
 	for _, s := range res {
-		out = append(out, q.entries(ctx, ch, s.Messages)...)
+		es, err := q.entries(ctx, ch, s.Messages)
+		out = append(out, es...)
+		if err != nil {
+			return out, err
+		}
 	}
 	return out, nil
 }
@@ -102,8 +110,9 @@ func (q *Queue) Ack(ctx context.Context, ch Channel, streamID string) error {
 	return nil
 }
 
-// AutoClaim takes up to n entries that another consumer has held for at least
-// minIdle, and gives them to this consumer.
+// AutoClaim takes up to n pending entries that have been idle for at least
+// minIdle, and gives them to this consumer. The entries can belong to another
+// consumer or to this one.
 func (q *Queue) AutoClaim(ctx context.Context, ch Channel, minIdle time.Duration, n int) ([]Entry, error) {
 	msgs, _, err := q.rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 		Stream:   streamKey(ch),
@@ -116,22 +125,24 @@ func (q *Queue) AutoClaim(ctx context.Context, ch Channel, minIdle time.Duration
 	if err != nil {
 		return nil, fmt.Errorf("autoclaim %s: %w", streamKey(ch), err)
 	}
-	return q.entries(ctx, ch, msgs), nil
+	return q.entries(ctx, ch, msgs)
 }
 
 // entries converts stream messages. An entry without a valid job id can never
 // work, so it is acknowledged and dropped.
-func (q *Queue) entries(ctx context.Context, ch Channel, msgs []redis.XMessage) []Entry {
+func (q *Queue) entries(ctx context.Context, ch Channel, msgs []redis.XMessage) ([]Entry, error) {
 	out := make([]Entry, 0, len(msgs))
 	for _, m := range msgs {
 		id, err := strconv.ParseInt(fmt.Sprint(m.Values[jobField]), 10, 64)
 		if err != nil {
-			_ = q.rdb.XAck(ctx, streamKey(ch), groupName, m.ID).Err()
+			if err := q.Ack(ctx, ch, m.ID); err != nil {
+				return out, fmt.Errorf("drop bad entry: %w", err)
+			}
 			continue
 		}
 		out = append(out, Entry{StreamID: m.ID, JobID: id})
 	}
-	return out
+	return out, nil
 }
 
 // IsNoGroup reports whether err means that the stream or the group is gone,
