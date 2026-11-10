@@ -290,3 +290,22 @@ func TestPreview_LogsNoBrief(t *testing.T) {
 		t.Errorf("brief in logs: %s", buf.String())
 	}
 }
+
+func TestPreview_NoMaxFirstName(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterSegments(mux, &SegmentPreviewer{
+		LLM: llm.NewMock(), Allow: segment.Default(),
+		Count: func(context.Context, segment.Where) (segment.Audience, error) {
+			return segment.Audience{Languages: []segment.LanguageCounts{{Code: "tr", MaxFirstName: 11}}}, nil
+		},
+		Now: time.Now, LLMTimeout: time.Second,
+	})
+	rec := post(mux, briefBody("Istanbul cart users"))
+	if rec.Code != 200 {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body)
+	}
+	body := strings.ToLower(rec.Body.String())
+	if strings.Contains(body, "maxfirstname") || strings.Contains(body, "max_first_name") {
+		t.Errorf("preview leaks max first name: %s", rec.Body)
+	}
+}

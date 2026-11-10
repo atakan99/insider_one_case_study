@@ -26,6 +26,9 @@ type Counts struct {
 type LanguageCounts struct {
 	Code string `json:"code"`
 	Counts
+	// MaxFirstName is the longest first name, in characters, among the
+	// reachable users. The preview response does not include it.
+	MaxFirstName int64 `json:"-"`
 }
 
 // Audience holds the totals and the counts for each language.
@@ -83,7 +86,8 @@ func CountAudience(ctx context.Context, pool *pgxpool.Pool, w Where) (Audience, 
        count(*) FILTER (WHERE email_consent),
        count(*) FILTER (WHERE sms_consent),
        count(*) FILTER (WHERE email_consent OR sms_consent),
-       count(*)
+       count(*),
+       coalesce(max(char_length(first_name)) FILTER (WHERE email_consent OR sms_consent), 0)
 FROM users
 WHERE (` + w.SQL() + `)
 GROUP BY language`
@@ -96,7 +100,7 @@ GROUP BY language`
 		defer rs.Close()
 		for rs.Next() {
 			var l LanguageCounts
-			if err := rs.Scan(&l.Code, &l.Email, &l.SMS, &l.Reachable, &l.Matched); err != nil {
+			if err := rs.Scan(&l.Code, &l.Email, &l.SMS, &l.Reachable, &l.Matched, &l.MaxFirstName); err != nil {
 				return err
 			}
 			l.NoConsent = l.Matched - l.Reachable

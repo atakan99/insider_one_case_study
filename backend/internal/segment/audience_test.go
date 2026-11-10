@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -277,5 +278,53 @@ func TestEmptyWhereIsRejected(t *testing.T) {
 	}
 	if ErrEmptyWhere.Error() != "segment: empty where" {
 		t.Errorf("message = %q", ErrEmptyWhere.Error())
+	}
+}
+
+func TestCountAudience_MaxFirstName(t *testing.T) {
+	ctx, pool, users := seedDB(t)
+	got, err := CountAudience(ctx, pool, compile(t, exampleRule))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{}
+	for _, u := range users {
+		if !(u.City == "Istanbul" && within(u.LastCartAddAt, 30) &&
+			(u.LastPurchaseAt == nil || olderThan(u.LastPurchaseAt, 30))) {
+			continue
+		}
+		if !u.EmailConsent && !u.SMSConsent {
+			continue
+		}
+		if n := int64(utf8.RuneCountInString(u.FirstName)); n > want[u.Language] {
+			want[u.Language] = n
+		}
+	}
+	if len(got.Languages) == 0 {
+		t.Fatal("no languages")
+	}
+	for _, l := range got.Languages {
+		if l.MaxFirstName != want[l.Code] || l.MaxFirstName == 0 {
+			t.Errorf("lang %s MaxFirstName = %d, want %d", l.Code, l.MaxFirstName, want[l.Code])
+		}
+	}
+}
+
+func TestCountAudience_MaxFirstNameRunes(t *testing.T) {
+	ctx, pool, _ := seedDB(t)
+	_, err := pool.Exec(ctx, `INSERT INTO users (first_name, last_name, email, phone, language, country,
+  city, birth_date, email_consent, sms_consent, created_at, order_count, total_spent)
+VALUES ('Şükrü Kağan', 'Test', 'runes.test@example.com', '+905550000000', 'tr', 'TR',
+  'Istanbul', '1990-01-01', TRUE, FALSE, now(), 99999, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := CountAudience(ctx, pool, compile(t,
+		`{"op":"and","conditions":[{"field":"order_count","op":"gte","value":99999}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Languages) != 1 || got.Languages[0].MaxFirstName != 11 {
+		t.Errorf("languages = %+v, want one with MaxFirstName 11", got.Languages)
 	}
 }
