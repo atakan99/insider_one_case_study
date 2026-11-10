@@ -70,6 +70,9 @@ const confirmOpen = ref(false)
 const retrying = ref(false)
 const retryError = ref('')
 let token = 0
+// Pages loaded with "Load more", and whether one is in flight. A refresh from the progress stream must not discard them.
+let extraPages = 0
+let loadingMore = false
 
 const channels = computed(() => CHANNELS.map(c => ({ ...c, p: props.progress.channels[c.key] as ChannelProgress })))
 const summaryChannels = computed(() => channels.value.filter(c => c.p.total > 0))
@@ -91,6 +94,9 @@ function errorMessage(err: unknown): string {
 
 async function load(more: boolean) {
   const mine = ++token
+  loadingMore = more
+  if (!more)
+    extraPages = 0
   loading.value = true
   listError.value = ''
   try {
@@ -103,6 +109,8 @@ async function load(more: boolean) {
     if (mine !== token)
       return
     jobs.value = more ? [...jobs.value, ...res.send_jobs] : res.send_jobs
+    if (more)
+      extraPages++
     nextAfter.value = res.next_after
   }
   catch (err) {
@@ -110,8 +118,10 @@ async function load(more: boolean) {
       listError.value = errorMessage(err)
   }
   finally {
-    if (mine === token)
+    if (mine === token) {
       loading.value = false
+      loadingMore = false
+    }
   }
 }
 
@@ -125,10 +135,15 @@ function pickChannel(c: DeliveryChannel | 'all') {
   void load(false)
 }
 
-// Reload the first page when the counts change, so that the list follows the sending.
+// Reload the first page when the campaign or its status changes, also at
+// completed. When only the counts change, reload only while no extra page is
+// loaded or loading, so that "Load more" keeps its pages.
 watch(
-  () => JSON.stringify([props.campaignId, props.progress.status, props.progress.channels]),
-  () => void load(false),
+  () => [props.campaignId, props.progress.status, JSON.stringify(props.progress.channels)] as const,
+  ([id, st], old) => {
+    if (!old || id !== old[0] || st !== old[1] || (extraPages === 0 && !loadingMore))
+      void load(false)
+  },
   { immediate: true },
 )
 

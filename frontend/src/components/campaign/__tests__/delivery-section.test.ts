@@ -188,6 +188,24 @@ describe('delivery section', () => {
     expect(list).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the loaded pages when only the counts change', async () => {
+    list.mockResolvedValueOnce({ send_jobs: [job({ id: 1 })], next_after: 77 })
+    const w = await make(prog('sending', { total: 100, sent: 10 }))
+    list.mockResolvedValueOnce({ send_jobs: [job({ id: 2, user_id: 5000 })], next_after: null })
+    await w.find('[data-test="load-more"]').trigger('click')
+    await flushPromises()
+    expect(w.findAll('[data-test="job"]')).toHaveLength(2)
+    list.mockClear()
+    await w.setProps({ progress: prog('sending', { total: 100, sent: 20 }) })
+    await flushPromises()
+    expect(list).not.toHaveBeenCalled()
+    expect(w.findAll('[data-test="job"]')).toHaveLength(2)
+    // A status change reloads the first page, also at completed.
+    await w.setProps({ progress: prog('completed', { total: 100, sent: 100 }) })
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
   it('shows an empty note and a list error', async () => {
     list.mockResolvedValue({ send_jobs: [], next_after: null })
     const w = await make()
