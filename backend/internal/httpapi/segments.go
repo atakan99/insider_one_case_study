@@ -54,11 +54,7 @@ func (p *SegmentPreviewer) preview(w http.ResponseWriter, r *http.Request) {
 	}
 	brief, err := segment.SanitizeBrief(in.Brief)
 	if err != nil {
-		msg := "The brief must contain at least one letter."
-		if errors.Is(err, segment.ErrBriefTooLong) {
-			msg = "The brief must have at most 1000 characters."
-		}
-		writeError(w, http.StatusBadRequest, "invalid_brief", msg, nil)
+		writeBriefError(w, err)
 		return
 	}
 	briefLen := utf8.RuneCountInString(brief)
@@ -137,6 +133,15 @@ func (p *SegmentPreviewer) preview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, previewResponse{
 		Rule: ans.Rule, Description: p.Allow.Describe(ans.Rule), Unmapped: unmapped, Audience: aud,
 	})
+}
+
+// writeBriefError sends invalid_brief for an error of segment.SanitizeBrief.
+func writeBriefError(w http.ResponseWriter, err error) {
+	msg := "The brief must contain at least one letter."
+	if errors.Is(err, segment.ErrBriefTooLong) {
+		msg = "The brief must have at most 1000 characters."
+	}
+	writeError(w, http.StatusBadRequest, "invalid_brief", msg, nil)
 }
 
 // generate runs one LLM call with its own timeout.
