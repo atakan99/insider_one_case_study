@@ -103,3 +103,23 @@ describe('generateContent', () => {
     expect(events).toHaveLength(1)
   })
 })
+
+describe('campaign event and campaign_id', () => {
+  it('parses the campaign event and an error with no language', () => {
+    const { events } = parseSSE('event: campaign\ndata: {"id":7,"status":"draft"}\n\nevent: error\ndata: {"code":"draft_not_saved","message":"x"}\n\n', '')
+    expect(events).toEqual([
+      { event: 'campaign', data: { id: 7, status: 'draft' } },
+      { event: 'error', data: { code: 'draft_not_saved', message: 'x' } },
+    ])
+  })
+
+  it('sends campaign_id only when given', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => sseResponse(['event: done\ndata: {}\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const ctl = new AbortController()
+    await generateContent('b', { a: 1 }, () => {}, ctl.signal)
+    await generateContent('b', { a: 1 }, () => {}, ctl.signal, 7)
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({ brief: 'b', rule: { a: 1 } })
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ brief: 'b', rule: { a: 1 }, campaign_id: 7 })
+  })
+})

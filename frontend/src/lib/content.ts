@@ -1,3 +1,4 @@
+import type { CampaignStatus } from '@/lib/campaigns'
 import type { Counts } from '@/lib/segments'
 
 import { API_BASE_URL } from '@/constants/app-config'
@@ -9,11 +10,12 @@ export type ContentEvent
     | { event: 'draft', data: { language: string, content: Content } }
     | { event: 'retry', data: { language: string, errors?: { path: string, message: string }[] } }
     | { event: 'final', data: { language: string, content: Content, limits: ContentLimits } }
-    | { event: 'error', data: { language: string, code: string, message: string } }
+    | { event: 'error', data: { language?: string, code: string, message: string } }
+    | { event: 'campaign', data: { id: number, status: CampaignStatus } }
     | { event: 'done', data: Record<string, never> }
 
 const FALLBACK_MESSAGE = 'Something went wrong. Try again.'
-const KNOWN_EVENTS = new Set(['audience', 'draft', 'retry', 'final', 'error', 'done'])
+const KNOWN_EVENTS = new Set(['audience', 'draft', 'retry', 'final', 'error', 'campaign', 'done'])
 
 export class ContentRequestError extends Error {
   code: string
@@ -87,12 +89,13 @@ export async function generateContent(
   rule: unknown,
   onEvent: (e: ContentEvent) => void,
   signal: AbortSignal,
+  campaignId?: number,
 ): Promise<void> {
   try {
     const res = await fetch(`${API_BASE_URL}/content/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ brief, rule }),
+      body: JSON.stringify(campaignId === undefined ? { brief, rule } : { brief, rule, campaign_id: campaignId }),
       signal,
     })
     if (!res.ok)

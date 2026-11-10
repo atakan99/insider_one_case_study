@@ -18,6 +18,8 @@ declare module 'vue' {
     AppSidebarNavTeamVercel: typeof import('./../components/app-sidebar/nav-team-vercel.vue')['default']
     CampaignBriefAudience: typeof import('./../components/campaign/brief-audience.vue')['default']
     CampaignContentCards: typeof import('./../components/campaign/content-cards.vue')['default']
+    CampaignMessagePreview: typeof import('./../components/campaign/message-preview.vue')['default']
+    CampaignReviewDialog: typeof import('./../components/campaign/review-dialog.vue')['default']
     CommandMenuPanel: typeof import('./../components/command-menu-panel/index.vue')['default']
     CommandMenuPanelCommandChangeTheme: typeof import('./../components/command-menu-panel/command-change-theme.vue')['default']
     CommandMenuPanelCommandItemHasIcon: typeof import('./../components/command-menu-panel/command-item-has-icon.vue')['default']

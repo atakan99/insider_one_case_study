@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import type { Content, ContentEvent, ContentLimits } from '@/lib/content'
 
@@ -8,6 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ContentRequestError, generateContent } from '@/lib/content'
+
+import ReviewDialog from './review-dialog.vue'
 
 interface LangCard {
   code: string
@@ -29,6 +32,12 @@ const CLOSED_MESSAGE = 'The connection closed early. Try again.'
 const cards = ref<LangCard[]>([])
 const running = ref(false)
 const requestError = ref('')
+// campaignId is the draft of the current run; the review button needs it.
+// draftId is the draft that "Regenerate content" replaces.
+const campaignId = ref<number | null>(null)
+let draftId: number | null = null
+const reviewOpen = ref(false)
+const router = useRouter()
 let controller: AbortController | null = null
 let token = 0
 
@@ -58,7 +67,18 @@ function handle(e: ContentEvent) {
   }
   if (e.event === 'done')
     return
-  const card = cardFor(e.data.language)
+  if (e.event === 'campaign') {
+    campaignId.value = e.data.id
+    draftId = e.data.id
+    return
+  }
+  if (e.event === 'error' && e.data.language === undefined) {
+    if (e.data.code === 'campaign_conflict')
+      draftId = null
+    requestError.value = e.data.message
+    return
+  }
+  const card = cardFor(e.data.language!)
   if (!card)
     return
   if (e.event === 'draft') {
@@ -80,7 +100,14 @@ function handle(e: ContentEvent) {
   }
 }
 
-async function start() {
+// A regenerate keeps the draft id, so the backend replaces that draft.
+// A new run (a new "Find audience") starts a new campaign.
+async function start(regenerate = false) {
+  if (!regenerate)
+    draftId = null
+  campaignId.value = null
+  reviewOpen.value = false
+  const replaceId = draftId ?? undefined
   controller?.abort()
   const ctl = new AbortController()
   controller = ctl
@@ -92,7 +119,7 @@ async function start() {
     await generateContent(props.brief, props.rule, (e) => {
       if (mine === token)
         handle(e)
-    }, ctl.signal)
+    }, ctl.signal, replaceId)
   }
   catch (err) {
     if (mine !== token)
@@ -131,7 +158,7 @@ onBeforeUnmount(() => {
         Generating content…
       </p>
       <span v-else />
-      <Button variant="outline" :disabled="running" @click="start">
+      <Button variant="outline" :disabled="running" @click="start(true)">
         Regenerate content
       </Button>
     </div>
@@ -198,5 +225,17 @@ onBeforeUnmount(() => {
         </template>
       </CardContent>
     </Card>
+
+    <div v-if="campaignId !== null" class="flex justify-end">
+      <Button data-test="review-button" class="w-full sm:w-auto" :disabled="running" @click="reviewOpen = true">
+        Review &amp; approve
+      </Button>
+    </div>
+    <ReviewDialog
+      v-if="campaignId !== null"
+      v-model:open="reviewOpen"
+      :campaign-id="campaignId"
+      @approved="id => router.push(`/campaigns/${id}`)"
+    />
   </div>
 </template>
