@@ -175,3 +175,35 @@ func TestLoadMockProvider_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_LLMSettings(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AnthropicModel != "claude-opus-5-5" {
+		t.Errorf("AnthropicModel = %q", cfg.AnthropicModel)
+	}
+	want := []string{"http://localhost:3000", "http://localhost:5173"}
+	if strings.Join(cfg.CORSOrigins, "|") != strings.Join(want, "|") {
+		t.Errorf("CORSOrigins = %v, want %v", cfg.CORSOrigins, want)
+	}
+
+	cfg, err = Load(env(map[string]string{
+		"DATABASE_URL":      "postgres://x",
+		"LLM_MODE":          "anthropic",
+		"ANTHROPIC_API_KEY": "test-key",
+		"ANTHROPIC_MODEL":   "claude-sonnet-5-5",
+		"CORS_ORIGINS":      " https://a.example , https://b.example,, ",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AnthropicModel != "claude-sonnet-5-5" || cfg.AnthropicAPIKey != "test-key" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	want = []string{"https://a.example", "https://b.example"}
+	if strings.Join(cfg.CORSOrigins, "|") != strings.Join(want, "|") {
+		t.Errorf("CORSOrigins = %v, want %v", cfg.CORSOrigins, want)
+	}
+}

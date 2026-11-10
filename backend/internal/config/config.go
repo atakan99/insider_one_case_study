@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,6 +22,10 @@ type Config struct {
 	DatabaseURL     string
 	LLMMode         string
 	AnthropicAPIKey string
+	// AnthropicModel is ANTHROPIC_MODEL. The default is claude-opus-5-5.
+	AnthropicModel string
+	// CORSOrigins is CORS_ORIGINS, a comma-separated list of allowed origins.
+	CORSOrigins []string
 }
 
 // Load reads the config through getenv. Pass os.Getenv in production and a
@@ -31,6 +36,19 @@ func Load(getenv func(string) string) (Config, error) {
 		DatabaseURL:     getenv("DATABASE_URL"),
 		LLMMode:         getenv("LLM_MODE"),
 		AnthropicAPIKey: getenv("ANTHROPIC_API_KEY"),
+		AnthropicModel:  getenv("ANTHROPIC_MODEL"),
+	}
+	if cfg.AnthropicModel == "" {
+		cfg.AnthropicModel = "claude-opus-5-5"
+	}
+	origins := getenv("CORS_ORIGINS")
+	if origins == "" {
+		origins = "http://localhost:3000,http://localhost:5173"
+	}
+	for _, o := range strings.Split(origins, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+		}
 	}
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8080"
