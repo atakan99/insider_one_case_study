@@ -148,14 +148,12 @@ describe('content cards', () => {
   })
 
   it('marks open cards on early close', async () => {
-    const r = open()
     gen.mockReset()
     gen.mockImplementationOnce(async (_b, _r, onEvent) => {
       onEvent(audience)
       onEvent({ event: 'final', data: { language: 'tr', content, limits } })
       throw new ContentRequestError('stream_closed', 'The connection closed early. Try again.')
     })
-    void r
     const w = make()
     await flushPromises()
     expect(w.find('[data-language="tr"]').text()).not.toContain('closed early')

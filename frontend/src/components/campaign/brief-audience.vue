@@ -31,6 +31,9 @@ function submit() {
   if (!canSubmit.value || pending.value || running.value)
     return
   const sent = brief.value
+  // Unmounts the cards, which aborts any open content request.
+  runId.value = 0
+  running.value = false
   mutation.mutate(sent, {
     onSuccess: (data) => {
       if (data.audience.languages.length === 0)
