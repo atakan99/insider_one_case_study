@@ -456,3 +456,17 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** The popup opens its own stream. The page opens one stream and passes progress as a prop.
 - **Choice:** The page owns the stream. A 409 on retry makes the page refresh its progress. After a stream error, the page polls `GET .../progress` every 2 s and does not open the stream again.
 - **Why:** One stream avoids two sources that disagree. Polling is simple and the data is the same (FR-40).
+
+## D-066 Duplicate queue entries use no rate token
+
+- **Context:** The recovery pushes stale queued jobs again. On a long backlog, an entry waits longer than the stale age. The recovery then adds a second entry for each job. Each duplicate entry used a rate token before `Claim` rejected it. This slowed the real sends and made the backlog bigger on each recovery pass.
+- **Options:** Raise the stale age. Let `Claim` stay the only check. Add a cheap check before the limiter and gate the re-push.
+- **Choice:** Before `Limiter.Wait`, the consumer calls `Store.Claimable`. A job that is not `queued`, and not `retrying` with `next_attempt_at` in the past, is acknowledged with no token used. If the check fails, the consumer continues on the normal path. The `Claim` UPDATE stays the real gate. The recovery pushes the stale queued jobs of a channel only when `XINFO GROUPS` shows `lag` 0 for that channel. A missing stream or group counts as lag 0. An unknown lag (negative), or an error, counts as no backlog, so the jobs are pushed.
+- **Why:** An unread entry means the job already waits on the stream, so a push adds no value. The safe direction on a doubt is a push, because a duplicate entry is harmless and a lost job is not. The check costs one indexed read for each entry. At a much larger scale, a second entry still costs this read. A larger system must then bound the stream. It can also make the stale age follow the backlog.
+
+## D-067 The page does not reopen the progress stream
+
+- **Context:** `goal.md` says that the stream closes after 30 minutes and that the page opens it again. D-065 gave the page a polling fallback for a stream error.
+- **Options:** Reopen the stream after an error or the 30-minute close. Poll until the campaign is `completed`.
+- **Choice:** After a stream error or the 30-minute close, the page polls `GET .../progress` every 2 s until the status is `completed`. It does not reopen the stream. This differs from `goal.md`, which says "The page opens it again".
+- **Why:** One fallback path is simpler than a reconnect loop. The polled data is the same as the stream data. The cost is one request every 2 s for a campaign that runs longer than 30 minutes.
