@@ -5,3 +5,4 @@
 - [Test DB harness defects](test-db-harness-defects.md) — URL rewrite vs ?dbname, err==nil constraint asserts, unused published port
 - [Seed generator defects](seed-generator-defects.md) — seed 0, Feb 29 age, indirect go.mod, `>=` asserts, restated SQL rule, untested money scale
 - [HTTP and config validation defects](http-config-validation-defects.md) — NaN in float checks, Decoder trailing data, reset reuses IDs, env_file leaks
+- [Review and approve defects](review-approve-defects.md) — id-only dialog cache, stale async load, count under row lock, stale limits after 422

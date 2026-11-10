@@ -21,7 +21,8 @@ backend/
   internal/
     config/         env loading
     httpapi/        handlers, health, SSE
-    segment/        rule DSL, validation, SQL builder
+    segment/        rule DSL, validation, SQL builder, sample first names
+    campaign/       draft and approved campaigns, edit check, approval
     llm/            interface, Claude client, fake
     content/        channel limits, {{var}} rendering
     delivery/       queue, rate limiter, retry, idempotency
@@ -50,7 +51,7 @@ ai-sessions/
    - If the validation fails, the backend sends the errors back one time as a `tool_result` with `is_error: true`. If the second answer also fails, the api returns `422` (D-024).
    - The backend compiles the valid rule to a parameterized query. Relative times use the wall clock (D-026).
    - The response has the rule, a description that the backend writes (D-023), and the audience counts for each channel and each language. The backend adds no language filter (D-022).
-   - A user is in the count of a channel only if the user has consent for that channel. The preview count applies consent with `FILTER` columns in `CountAudience`. `Recipients` is the only function that returns user rows. It always adds the consent condition for its channel. Slices 05 to 07 get recipients only through `Recipients`.
+   - A user is in the count of a channel only if the user has consent for that channel. The preview count applies consent with `FILTER` columns in `CountAudience`. `Recipients` is the only function that returns user rows. It always adds the consent condition for its channel. Slices 05 to 07 get recipients only through `Recipients`. `SampleFirstNames` returns first names only, for the preview in step 3.
    - The api sends CORS headers for the origins in `CORS_ORIGINS` (D-028). The default model is Claude Opus 5.5 (D-027).
 2. **Content** — The UI streams the SMS and email content.
    - `POST /api/content/generate` takes the brief and the rule. The browser sends the rule back. The backend validates the rule again and runs the audience query again (D-032).
@@ -61,7 +62,13 @@ ai-sessions/
    - `cmd/api` gives the mock client its default answers, so the flow works with `LLM_MODE=mock` and no key (D-034).
    - The api server has no write timeout, because a stream can last 90 s.
 3. **Approval** — The marketer previews, edits and approves the content.
-   - TBD per slice.
+   - At the end of the content stream, the backend saves a draft campaign with the final languages. Failed languages are skipped. The stream sends a `campaign` event with the id, then `done` (D-036). No draft is saved after a client disconnect or when all languages fail.
+   - "Regenerate content" sends the draft id. The backend replaces the content of that draft. It compares the brief and the rule (as `jsonb`) with the stored ones (D-037).
+   - The review window loads the campaign and sample first names (`GET /api/campaigns/{id}/sample`). The browser counts the limits with the stored `first_name_runes`. The backend makes the decision.
+   - `PUT /api/campaigns/{id}/contents` saves the edits. `POST /api/campaigns/{id}/approve` saves the last edits and approves. Both validate the stored rule again, run the audience query again and check the content with the new longest first name (D-038).
+   - The service counts the audience before it locks the row. The approval then locks the campaign row and checks the status in one transaction. A repeated approval returns the campaign and changes nothing (D-039).
+   - Database triggers block a change of the content, the brief, the rule and the approval time after approval (D-040).
+   - The campaign stores the counts at the last save, but no recipient list (D-041). The send step gets the recipients at send time.
 4. **Send** — A queue sends the messages to the mock provider.
    - The mock provider delivers each request, also a repeat. The worker owns the dedup. It does not retry after a timeout or a dropped connection (D-018, D-019).
 5. **Live status** — The dashboard shows the delivery status.

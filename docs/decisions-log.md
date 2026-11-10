@@ -246,3 +246,73 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Reset the throttle after a retry or keep it. Always send the last draft or skip it when the text is the same. Send `error` and `done` after a disconnect or send nothing. Ignore a missing flusher or return an error.
 - **Choice:** The draft throttle does not reset after a retry. The handler skips the last draft when the text did not change. After a client disconnect, it sends no `error` and no `done` event. If the response cannot flush, it returns `500` with `internal_error`. `net/http` can always flush, so this path is a guard only.
 - **Why:** A throttle that resets would let a retry send a burst of drafts. A repeated draft adds no information. No client reads the events after a disconnect. A stream that cannot flush is not a stream, so the handler fails early and clearly.
+
+## D-036 The content endpoint saves the draft
+
+- **Context:** The user wants drafts. Claude creates a draft when it finishes the content.
+- **Options:** The browser posts the final content to a create endpoint. The content endpoint saves the draft at the end of the stream.
+- **Choice:** The content endpoint saves the draft after all languages are final or failed. It sends a `campaign` event before `done`. It saves no draft when all languages fail or after a client disconnect.
+- **Why:** The stored content is always content that passed the validator. The browser cannot store content that Claude did not write. A disconnected client did not see the result, so a draft would surprise the marketer.
+
+## D-037 "Regenerate content" replaces the same draft
+
+- **Context:** Each content run can make a draft. A marketer who clicks "Regenerate content" several times would get many drafts.
+- **Options:** Make a new draft for each run. Replace the draft of the run.
+- **Choice:** "Regenerate content" sends `campaign_id`. The backend replaces the content of that draft if the brief and the rule are the same and the campaign is a draft. Else it sends `campaign_conflict`. A new "Find audience" makes a new draft. The rule compare uses `jsonb` equality.
+- **Why:** One brief and one audience give one campaign. Postgres `jsonb` changes the key order, so a byte compare would fail on each regenerate.
+
+## D-038 Save and approve check the content again with the current audience
+
+- **Context:** The browser sends edited text. The audience can change between the draft and the approval.
+- **Options:** Trust the browser counters. Check with the `first_name_runes` of the draft. Run the audience query again.
+- **Choice:** Each save and each approval parses the stored rule, runs the audience query again and checks the content with the new longest name. The counts in the campaign update. A failed check also stores the new counts, so the window shows the new limit. The browser sends no rule after the draft exists.
+- **Why:** A new user with a longer name could make an SMS longer than 160 characters at send time. The backend is the gate, as in D-025 and D-032.
+
+## D-039 A row lock stops a double approval
+
+- **Context:** A double click, two tabs or a retried request can approve one draft two times.
+- **Options:** An idempotency key from the browser. A row lock and a status check.
+- **Choice:** The service counts the audience first, with no lock. Then the approval runs `SELECT ... FOR UPDATE`, checks the status, writes the content and sets `approved` in one transaction. The lock never waits for the audience query. A repeated approval returns `200` with the campaign and changes nothing. A save on an approved campaign returns `409`.
+- **Why:** The draft id already names the campaign. A lock gives one approval with no extra key or table. A test with ten parallel approvals proves it.
+
+## D-040 Triggers freeze an approved campaign
+
+- **Context:** After approval, the content must not change. The send step must send what the marketer approved.
+- **Options:** Check the status in the store code only. Add database triggers.
+- **Choice:** A trigger on `campaign_contents` rejects an insert, update or delete when the campaign is not a draft. A trigger on `campaigns` rejects a change of the brief, rule, description, skipped languages or approval time after approval, and a change back to `draft`. The status can still move forward for slice 07.
+- **Why:** The rule holds also for code that a later slice adds and for manual SQL.
+
+## D-041 The campaign stores counts, not recipients
+
+- **Context:** The review window and the campaign page show how many people get each channel.
+- **Options:** Store the recipient list at approval. Store only the counts.
+- **Choice:** Each content row stores the SMS count, the email count and `first_name_runes` of the last save. The send step gets the recipients with `segment.Recipients` at send time.
+- **Why:** No user row goes into the campaign tables. Consent can change before the send, and the send step must use the current consent.
+
+## D-042 Edits are saved with "Save draft" or with the approval
+
+- **Context:** The marketer edits in the review window and can close it.
+- **Options:** Autosave each change. Save on a button.
+- **Choice:** "Save draft" and "Approve & send" save. Each way to close the window with unsaved edits asks "Discard your changes?". The edits stay while the page stays open.
+- **Why:** A save runs the audience query. Autosave would run it on each key press. A clear button gives a clear moment of save.
+
+## D-043 Sample first names for the preview
+
+- **Context:** The preview shows the message with a real name from the audience.
+- **Options:** A fixed name. Real users with all fields. First names only.
+- **Choice:** `GET /api/campaigns/{id}/sample` returns up to 5 distinct first names of reachable users for each language. The first is the longest. The others come from the lowest user ids. The query reads no surname, email or phone. If the request fails, the preview uses "Alex". The sender shows as "Your brand".
+- **Why:** The longest name shows the worst case for the limits. First names are enough for `{{first_name}}`. The sender belongs to the send step.
+
+## D-044 The marketer cannot add or remove a language
+
+- **Context:** The user decided that a failed language is skipped. The spec did not give a way to leave out a final language.
+- **Options:** A toggle for each language. Only failed languages are skipped.
+- **Choice:** The save and approval must have one entry for each language of the draft. If a language has no reachable users at approval, the approval fails with `content_invalid` on `contents[i].language`. The backend does not drop the language silently.
+- **Why:** The user asked to send what Claude made. A silent drop would send less than the confirm popup showed.
+
+## D-045 Close paths and the single-line subject
+
+- **Context:** The review window can close by the close button, "Cancel", Escape or a click outside. The spec asks for an error on a line break in the subject.
+- **Options:** Handle each close event. Handle the dialog `update:open` event.
+- **Choice:** All close paths go through the dialog `update:open` event, which asks first when edits are not saved. The subject uses a single-line input, so the browser drops line breaks. The backend still rejects `\n` and `\r` in the subject.
+- **Why:** One path cannot miss a way to close. A browser cannot send a line break from a single-line input, so the browser check is for paste only, and the backend is the gate.

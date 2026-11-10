@@ -77,3 +77,11 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Open questions:
   - No live call with a real key tested eager streaming together with `strict` on `submit_content`.
   - The Minor items in `.superpowers/sdd/05-content-generation/progress.md` go to the final review.
+
+## 2026-11-10 — 06-review-approve
+- Done: spec `docs/specs/06-review-approve/` (with the mockup), plan `docs/plans/06-review-approve.md` and Tasks 1 to 9, run inline. User decisions: one review window with SMS and Email tabs, a second confirm before the send, a token-based design that works on a phone, failed languages are skipped, and Claude saves a draft when it finishes. Added migration `00002_campaigns`, `segment.SampleFirstNames`, `internal/campaign` (store, check, service), five campaign endpoints, the draft save in the content stream, the review window, `/campaigns` and `/campaigns/{id}`. Added D-036 to D-045. The final review found 1 Critical and 4 Important defects. All 5 are fixed, each with a test that failed first: a stale draft text after "Regenerate content", the row lock that waited for the audience query, a late response for another campaign, old limits after a 422, and the review button after a failed regenerate.
+- Verified with: `make verify` exit 0 (Go tests with Postgres, 146 frontend tests, lint, build). A compose run with `-p cc-verify` on ports 13000 and 18080 (the running stack holds 3000 and 8080) gave the draft, approve `200`, repeat `200`, PUT `409` and CORS with `PUT`. Headless Chrome at 1280 px and 360 px completed the flow to "Approved" with no horizontal scroll.
+- Next: user review of slice 06. The user sets `06-review-approve.passes`. Then slice 07-send-queue.
+- Open questions:
+  - Five Minor review items stay open. See the final message of the session.
+  - Slice 07 must widen the `campaigns.status` CHECK and keep `approved_at` set for the later statuses.
