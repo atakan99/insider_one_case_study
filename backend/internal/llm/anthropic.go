@@ -31,7 +31,42 @@ func (c *anthropicClient) Generate(ctx context.Context, req Request) (Response, 
 	if err != nil {
 		return Response{}, mapError(err)
 	}
-	return parseResponse(msg), nil
+	return parseResponse(msg, nil), nil
+}
+
+// Stream sends the request as a streaming call. It calls on for each
+// input_json_delta and with Reset for each fallback block. It never logs the
+// request.
+func (c *anthropicClient) Stream(ctx context.Context, req Request, on func(StreamEvent)) (Response, error) {
+	stream := c.client.Beta.Messages.NewStreaming(ctx, c.buildParams(req))
+	defer stream.Close()
+
+	var msg anthropic.BetaMessage
+	// The raw tool input of each block, as streamed. Accumulate replaces an
+	// input that is not valid JSON with {}, but the caller must see the real
+	// text to report it as cut off or invalid.
+	inputs := map[int]string{}
+	for stream.Next() {
+		ev := stream.Current()
+		if err := msg.Accumulate(ev); err != nil {
+			return Response{}, fmt.Errorf("llm: %w", err)
+		}
+		switch e := ev.AsAny().(type) {
+		case anthropic.BetaRawContentBlockStartEvent:
+			if _, ok := e.ContentBlock.AsAny().(anthropic.BetaFallbackBlock); ok {
+				on(StreamEvent{Reset: true})
+			}
+		case anthropic.BetaRawContentBlockDeltaEvent:
+			if d, ok := e.Delta.AsAny().(anthropic.BetaInputJSONDelta); ok && d.PartialJSON != "" {
+				inputs[int(e.Index)] += d.PartialJSON
+				on(StreamEvent{Delta: d.PartialJSON})
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return Response{}, mapError(err)
+	}
+	return parseResponse(&msg, inputs), nil
 }
 
 func mapError(err error) error {
@@ -63,6 +98,9 @@ func (c *anthropicClient) buildParams(req Request) anthropic.BetaMessageNewParam
 		InputSchema: schema,
 		Strict:      anthropic.Bool(true),
 	}
+	if req.Tool.Eager {
+		tool.EagerInputStreaming = anthropic.Bool(true)
+	}
 
 	msgs := make([]anthropic.BetaMessageParam, 0, len(req.Turns))
 	for _, t := range req.Turns {
@@ -92,16 +130,62 @@ func (c *anthropicClient) buildParams(req Request) anthropic.BetaMessageNewParam
 	}
 }
 
-func parseResponse(msg *anthropic.BetaMessage) Response {
+// parseResponse turns the final message into a Response. rawInputs, if not
+// nil, gives the streamed raw tool input of a content block by index.
+//
+// With a server-side fallback, the content has a fallback block at each model
+// switch. Only text blocks from before the last fallback block are kept; a
+// tool_use before it is not valid. ToolUse is the first tool call after the
+// last fallback block. A tool_use whose input is not a JSON object is replayed
+// with {} as the input, so that Assistant can be sent back to the API.
+func parseResponse(msg *anthropic.BetaMessage, rawInputs map[int]string) Response {
 	resp := Response{
-		Assistant: msg.ToParam(),
-		Refused:   msg.StopReason == anthropic.BetaStopReasonRefusal,
+		Refused: msg.StopReason == anthropic.BetaStopReasonRefusal,
+		CutOff:  msg.StopReason == anthropic.BetaStopReasonMaxTokens,
 	}
-	for _, block := range msg.Content {
-		if v, ok := block.AsAny().(anthropic.BetaToolUseBlock); ok {
-			resp.ToolUse = &ToolUse{ID: v.ID, Name: v.Name, Input: json.RawMessage(v.JSON.Input.Raw())}
-			break
+
+	lastFallback := -1
+	for i, block := range msg.Content {
+		if _, ok := block.AsAny().(anthropic.BetaFallbackBlock); ok {
+			lastFallback = i
 		}
 	}
+
+	assistant := msg.ToParam()
+	content := make([]anthropic.BetaContentBlockParamUnion, 0, len(msg.Content))
+	for i, block := range msg.Content {
+		switch v := block.AsAny().(type) {
+		case anthropic.BetaTextBlock:
+			content = append(content, block.ToParam())
+		case anthropic.BetaToolUseBlock:
+			if i < lastFallback {
+				continue
+			}
+			raw, ok := rawInputs[i]
+			if !ok {
+				raw = v.JSON.Input.Raw()
+			}
+			p := v.ToParam()
+			if !isJSONObject(raw) {
+				p.Input = map[string]any{}
+			}
+			content = append(content, anthropic.BetaContentBlockParamUnion{OfToolUse: &p})
+			if resp.ToolUse == nil {
+				resp.ToolUse = &ToolUse{ID: v.ID, Name: v.Name, Input: json.RawMessage(raw)}
+			}
+		default:
+			if i < lastFallback {
+				continue
+			}
+			content = append(content, block.ToParam())
+		}
+	}
+	assistant.OfAssistant.Content = content
+	resp.Assistant = assistant
 	return resp
+}
+
+func isJSONObject(raw string) bool {
+	var obj map[string]json.RawMessage
+	return json.Unmarshal([]byte(raw), &obj) == nil && obj != nil
 }

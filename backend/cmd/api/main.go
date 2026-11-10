@@ -61,7 +61,7 @@ func run() error {
 	mux := http.NewServeMux()
 	httpapi.RegisterHealth(mux, pool)
 
-	llmClient, err := llm.New(cfg)
+	llmClient, err := llm.New(cfg, nil)
 	if err != nil {
 		return err
 	}

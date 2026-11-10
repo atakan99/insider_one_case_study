@@ -16,6 +16,7 @@ type Tool struct {
 	Name        string
 	Description string
 	Schema      map[string]any
+	Eager       bool // send eager_input_streaming: true, so the input streams unbuffered
 }
 
 // ToolUse is a tool call that the model made.
@@ -51,17 +52,32 @@ type Response struct {
 	ToolUse   *ToolUse // nil if the model did not call the tool
 	Assistant any      // opaque; append it as Turn{Assistant: ...} for a repair round
 	Refused   bool     // stop_reason == refusal
+	CutOff    bool     // stop_reason == max_tokens
+}
+
+// StreamEvent is one event of a streaming call.
+type StreamEvent struct {
+	Delta string // a fragment of the tool input JSON, or
+	Reset bool   // a fallback block started; drop the fragments so far
 }
 
 // Client calls the model.
 type Client interface {
 	Generate(ctx context.Context, req Request) (Response, error)
+	// Stream is Generate with a callback for each fragment of the tool input.
+	// on is called from the calling goroutine, in order. The returned Response
+	// is the same as Generate would give for the final message.
+	Stream(ctx context.Context, req Request, on func(StreamEvent)) (Response, error)
 }
 
-// New returns the client for cfg.LLMMode.
-func New(cfg config.Config) (Client, error) {
+// New returns the client for cfg.LLMMode. In mock mode, mockDefault gives the
+// answer of each call; nil keeps ExampleRuleJSON for every call.
+func New(cfg config.Config, mockDefault MockDefault) (Client, error) {
 	switch cfg.LLMMode {
 	case config.LLMModeMock:
+		if mockDefault != nil {
+			return NewMockFunc(mockDefault), nil
+		}
 		return NewMock(), nil
 	case config.LLMModeAnthropic:
 		return NewAnthropic(cfg.AnthropicAPIKey, cfg.AnthropicModel), nil

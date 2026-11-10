@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -159,7 +162,7 @@ func decode(t *testing.T, body string) *anthropic.BetaMessage {
 }
 
 func TestAnthropic_ParseResponse(t *testing.T) {
-	r := parseResponse(decode(t, toolUseBody))
+	r := parseResponse(decode(t, toolUseBody), nil)
 	if r.Refused || r.ToolUse == nil {
 		t.Fatalf("tool use response = %+v", r)
 	}
@@ -174,12 +177,12 @@ func TestAnthropic_ParseResponse(t *testing.T) {
 		t.Errorf("assistant = %T, want BetaMessageParam", r.Assistant)
 	}
 
-	r = parseResponse(decode(t, textBody))
+	r = parseResponse(decode(t, textBody), nil)
 	if r.ToolUse != nil || r.Refused || r.Assistant == nil {
 		t.Errorf("text response = %+v", r)
 	}
 
-	r = parseResponse(decode(t, refusalBody))
+	r = parseResponse(decode(t, refusalBody), nil)
 	if !r.Refused || r.ToolUse != nil {
 		t.Errorf("refusal response = %+v", r)
 	}
@@ -196,23 +199,246 @@ func TestAnthropic_ErrorsKeepDeadline(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	c, err := New(config.Config{LLMMode: config.LLMModeMock})
+	c, err := New(config.Config{LLMMode: config.LLMModeMock}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := c.(*Mock); !ok {
-		t.Errorf("mock mode client = %T", c)
+	m, ok := c.(*Mock)
+	if !ok {
+		t.Fatalf("mock mode client = %T", c)
 	}
-	c, err = New(config.Config{LLMMode: config.LLMModeAnthropic, AnthropicAPIKey: "k", AnthropicModel: "m"})
+	if r, err := m.Generate(context.Background(), Request{}); err != nil || string(r.ToolUse.Input) != ExampleRuleJSON {
+		t.Errorf("nil default: %+v, %v", r, err)
+	}
+
+	c, err = New(config.Config{LLMMode: config.LLMModeMock}, func(Request) MockStep {
+		return MockStep{Response: Response{Refused: true}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := c.Generate(context.Background(), Request{}); err != nil || !r.Refused {
+		t.Errorf("custom default: %+v, %v", r, err)
+	}
+
+	c, err = New(config.Config{LLMMode: config.LLMModeAnthropic, AnthropicAPIKey: "k", AnthropicModel: "m"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := c.(*anthropicClient); !ok {
 		t.Errorf("anthropic mode client = %T", c)
 	}
-	if _, err := New(config.Config{LLMMode: "x"}); err == nil {
+	if _, err := New(config.Config{LLMMode: "x"}, nil); err == nil {
 		t.Error("want error for unknown mode")
 	}
 }
 
-var _ = option.WithMaxRetries
+func TestAnthropic_BuildParams_Eager(t *testing.T) {
+	c := &anthropicClient{model: "m"}
+	tool := testTool()
+	tool.Eager = true
+	p := c.buildParams(Request{Tool: tool})
+	tp := p.Tools[0].OfTool
+	if !tp.EagerInputStreaming.Valid() || !tp.EagerInputStreaming.Value {
+		t.Errorf("EagerInputStreaming = %+v", tp.EagerInputStreaming)
+	}
+	if !tp.Strict.Valid() || !tp.Strict.Value {
+		t.Errorf("Strict = %+v", tp.Strict)
+	}
+	wire := marshal(t, p)["tools"].([]any)[0].(map[string]any)
+	if wire["eager_input_streaming"] != true || wire["strict"] != true {
+		t.Errorf("tool = %v", wire)
+	}
+
+	// Without Eager the field is not sent.
+	p = c.buildParams(Request{Tool: testTool()})
+	wire = marshal(t, p)["tools"].([]any)[0].(map[string]any)
+	if _, ok := wire["eager_input_streaming"]; ok {
+		t.Errorf("eager_input_streaming must not be set: %v", wire)
+	}
+}
+
+const cutOffBody = `{"id":"msg_4","type":"message","role":"assistant","model":"claude-opus-5-5",
+"content":[{"type":"tool_use","id":"toolu_4","name":"submit_content","input":{"sms":"a"}}],
+"stop_reason":"max_tokens","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
+
+func TestAnthropic_ParseResponse_CutOff(t *testing.T) {
+	r := parseResponse(decode(t, cutOffBody), nil)
+	if !r.CutOff || r.Refused {
+		t.Errorf("response = %+v", r)
+	}
+	if r := parseResponse(decode(t, toolUseBody), nil); r.CutOff {
+		t.Errorf("tool_use stop must not be CutOff")
+	}
+}
+
+const fallbackBody = `{"id":"msg_5","type":"message","role":"assistant","model":"claude-opus-5-5",
+"content":[
+ {"type":"text","text":"before"},
+ {"type":"tool_use","id":"toolu_old","name":"submit_content","input":{"sms":"old"}},
+ {"type":"fallback","from":{"model":"claude-opus-5-5"},"to":{"model":"claude-sonnet-5"},"trigger":{"type":"refusal","category":null}},
+ {"type":"text","text":"after"},
+ {"type":"tool_use","id":"toolu_new","name":"submit_content","input":{"sms":"new"}}
+],
+"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
+
+func assistantBlocks(t *testing.T, a any) []map[string]any {
+	t.Helper()
+	p, ok := a.(anthropic.BetaMessageParam)
+	if !ok {
+		t.Fatalf("assistant = %T", a)
+	}
+	m := marshal(t, p)
+	if m["role"] != "assistant" {
+		t.Errorf("role = %v", m["role"])
+	}
+	var out []map[string]any
+	for _, b := range m["content"].([]any) {
+		out = append(out, b.(map[string]any))
+	}
+	return out
+}
+
+func TestAnthropic_ParseResponse_Fallback(t *testing.T) {
+	r := parseResponse(decode(t, fallbackBody), nil)
+	if r.ToolUse == nil || r.ToolUse.ID != "toolu_new" {
+		t.Fatalf("tool use = %+v", r.ToolUse)
+	}
+	if string(r.ToolUse.Input) != `{"sms":"new"}` {
+		t.Errorf("input = %s", r.ToolUse.Input)
+	}
+	blocks := assistantBlocks(t, r.Assistant)
+	var types []string
+	for _, b := range blocks {
+		types = append(types, fmt.Sprint(b["type"]))
+		if b["id"] == "toolu_old" {
+			t.Errorf("tool_use before fallback was kept: %v", b)
+		}
+	}
+	if got := strings.Join(types, ","); got != "text,fallback,text,tool_use" {
+		t.Errorf("assistant block types = %s", got)
+	}
+}
+
+const nonObjectInputBody = `{"id":"msg_6","type":"message","role":"assistant","model":"claude-opus-5-5",
+"content":[{"type":"tool_use","id":"toolu_6","name":"submit_content","input":"not an object"}],
+"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`
+
+func TestAnthropic_AssistantInvalidInput(t *testing.T) {
+	r := parseResponse(decode(t, nonObjectInputBody), nil)
+	if r.ToolUse == nil || string(r.ToolUse.Input) != `"not an object"` {
+		t.Fatalf("tool use = %+v", r.ToolUse)
+	}
+	blocks := assistantBlocks(t, r.Assistant)
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %v", blocks)
+	}
+	if in, ok := blocks[0]["input"].(map[string]any); !ok || len(in) != 0 {
+		t.Errorf("replayed input = %#v, want {}", blocks[0]["input"])
+	}
+
+	// A raw input override that is cut off (the streaming case) is kept in
+	// ToolUse, and the replayed param still has {}.
+	r = parseResponse(decode(t, cutOffBody), map[int]string{0: `{"sms":"a`})
+	if string(r.ToolUse.Input) != `{"sms":"a` {
+		t.Errorf("tool use input = %s", r.ToolUse.Input)
+	}
+	blocks = assistantBlocks(t, r.Assistant)
+	if in, ok := blocks[0]["input"].(map[string]any); !ok || len(in) != 0 {
+		t.Errorf("replayed input = %#v, want {}", blocks[0]["input"])
+	}
+}
+
+func sse(events ...string) string {
+	var sb strings.Builder
+	for _, e := range events {
+		var v struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal([]byte(e), &v)
+		fmt.Fprintf(&sb, "event: %s\ndata: %s\n\n", v.Type, e)
+	}
+	return sb.String()
+}
+
+func streamClient(t *testing.T, body string) *anthropicClient {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req["stream"] != true {
+			t.Errorf("request stream = %v (%v)", req["stream"], err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return &anthropicClient{
+		client: anthropic.NewClient(option.WithBaseURL(srv.URL), option.WithAPIKey("test"), option.WithMaxRetries(0)),
+		model:  "claude-opus-5-5",
+	}
+}
+
+const msgStart = `{"type":"message_start","message":{"id":"msg_s","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}}`
+
+func TestAnthropic_Stream(t *testing.T) {
+	body := sse(
+		msgStart,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_old","name":"submit_content","input":{}}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"sms\":\"ol"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"content_block_start","index":1,"content_block":{"type":"fallback","from":{"model":"claude-opus-5-5"},"to":{"model":"claude-sonnet-5"},"trigger":{"type":"refusal","category":null}}}`,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_new","name":"submit_content","input":{}}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"sms\":"}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"new\"}"}}`,
+		`{"type":"content_block_stop","index":2}`,
+		`{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":5}}`,
+		`{"type":"message_stop"}`,
+	)
+	c := streamClient(t, body)
+	var evs []StreamEvent
+	r, err := c.Stream(context.Background(), Request{Tool: testTool()}, func(ev StreamEvent) { evs = append(evs, ev) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []StreamEvent{{Delta: `{"sms":"ol`}, {Reset: true}, {Delta: `{"sms":`}, {Delta: `"new"}`}}
+	if fmt.Sprint(evs) != fmt.Sprint(want) {
+		t.Errorf("events = %+v, want %+v", evs, want)
+	}
+	if r.ToolUse == nil || r.ToolUse.ID != "toolu_new" || string(r.ToolUse.Input) != `{"sms":"new"}` {
+		t.Errorf("tool use = %+v", r.ToolUse)
+	}
+	if r.CutOff || r.Refused {
+		t.Errorf("response = %+v", r)
+	}
+	for _, b := range assistantBlocks(t, r.Assistant) {
+		if b["id"] == "toolu_old" {
+			t.Errorf("tool_use before fallback was kept")
+		}
+	}
+}
+
+func TestAnthropic_StreamCutOff(t *testing.T) {
+	body := sse(
+		msgStart,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_c","name":"submit_content","input":{}}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"sms\":\"cut"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":5}}`,
+		`{"type":"message_stop"}`,
+	)
+	r, err := streamClient(t, body).Stream(context.Background(), Request{Tool: testTool()}, func(StreamEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.CutOff {
+		t.Errorf("CutOff = false")
+	}
+	if r.ToolUse == nil || string(r.ToolUse.Input) != `{"sms":"cut` {
+		t.Fatalf("tool use = %+v", r.ToolUse)
+	}
+	blocks := assistantBlocks(t, r.Assistant)
+	if in, ok := blocks[0]["input"].(map[string]any); !ok || len(in) != 0 {
+		t.Errorf("replayed input = %#v, want {}", blocks[0]["input"])
+	}
+}
