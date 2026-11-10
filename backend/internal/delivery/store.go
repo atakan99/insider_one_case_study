@@ -200,12 +200,13 @@ WHERE id = $1 AND status = 'sending'`, id)
 	return nil
 }
 
-// Finish writes the result of an attempt to a sending job. A job that is not
+// Finish writes the result of an attempt to a sending job. A sent job keeps
+// the last_error of an earlier attempt. A job that is not
 // sending stays as it is, and this is not an error.
 func (s *Store) Finish(ctx context.Context, id int64, r Result, now time.Time) error {
 	err := s.inTx(ctx, pgx.ReadWrite, func(tx pgx.Tx) error {
 		if r.Status == StatusSent {
-			_, err := tx.Exec(ctx, `UPDATE send_jobs SET status = $2, last_error = $3, retryable = $4, next_attempt_at = $5,
+			_, err := tx.Exec(ctx, `UPDATE send_jobs SET status = $2, last_error = COALESCE(NULLIF($3, ''), last_error), retryable = $4, next_attempt_at = $5,
 provider_id = $6, sent_at = $7, updated_at = $7 WHERE id = $1 AND status = 'sending'`,
 				id, string(r.Status), r.LastError, r.Retryable, r.NextAttemptAt, r.ProviderID, now)
 			return err

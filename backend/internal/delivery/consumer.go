@@ -71,7 +71,9 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	}
 
 	reference := fmt.Sprintf("%d:%d:%s", job.CampaignID, job.UserID, job.Channel)
-	o := c.Provider.Send(ctx, c.Channel, msg, reference)
+	// A started request may finish: only HTTP.Timeout bounds it, so a
+	// shutdown does not turn a delivered message into "canceled".
+	o := c.Provider.Send(done, c.Channel, msg, reference)
 	if o.Kind == Retryable && o.RetryAfter > 0 {
 		c.Limiter.Pause(o.RetryAfter)
 	}

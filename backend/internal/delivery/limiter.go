@@ -35,24 +35,41 @@ func (l *Limiter) Pause(d time.Duration) {
 }
 
 // Wait blocks until a send is allowed. It returns ctx.Err() when ctx is cancelled.
+// A pause that starts while Wait sleeps for a token is honoured too.
 func (l *Limiter) Wait(ctx context.Context) error {
+	for {
+		if err := l.waitPause(ctx); err != nil {
+			return err
+		}
+		now := l.clock.Now()
+		r := l.rl.ReserveN(now, 1)
+		if err := l.clock.Sleep(ctx, r.DelayFrom(now)); err != nil {
+			r.CancelAt(now)
+			return err
+		}
+		if !l.paused() {
+			return nil
+		}
+	}
+}
+
+func (l *Limiter) paused() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.clock.Now().Before(l.pausedUntil)
+}
+
+func (l *Limiter) waitPause(ctx context.Context) error {
 	for {
 		l.mu.Lock()
 		until := l.pausedUntil
 		l.mu.Unlock()
 		d := until.Sub(l.clock.Now())
 		if d <= 0 {
-			break
+			return nil
 		}
 		if err := l.clock.Sleep(ctx, d); err != nil {
 			return err
 		}
 	}
-	now := l.clock.Now()
-	r := l.rl.ReserveN(now, 1)
-	if err := l.clock.Sleep(ctx, r.DelayFrom(now)); err != nil {
-		r.CancelAt(now)
-		return err
-	}
-	return nil
 }

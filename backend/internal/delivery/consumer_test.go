@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -115,14 +116,14 @@ func TestConsumer_Sequences(t *testing.T) {
 		name  string
 		steps []step
 	}{
-		{"429 then 202", []step{{"429", StatusRetrying, 1, "429", false}, {"none", StatusSent, 2, "", false}}},
-		{"500 then 202", []step{{"500", StatusRetrying, 1, "500", false}, {"none", StatusSent, 2, "", false}}},
+		{"429 then 202", []step{{"429", StatusRetrying, 1, "429", false}, {"none", StatusSent, 2, "429", false}}},
+		{"500 then 202", []step{{"500", StatusRetrying, 1, "500", false}, {"none", StatusSent, 2, "500", false}}},
 		{"503 five times", []step{{"503", StatusRetrying, 1, "503", false}, {"503", StatusRetrying, 2, "503", false},
 			{"503", StatusRetrying, 3, "503", false}, {"503", StatusRetrying, 4, "503", false}, {"503", StatusFailed, 5, "503", true}}},
 		{"400", []step{{"bogus", StatusFailed, 1, "400", false}}},
 		{"slow", []step{{"slow", StatusUnknown, 1, "timeout", false}}},
-		{"lost", []step{{"lost", StatusUnknown, 1, "", false}}},
-		{"refused then 202", []step{{"refuse", StatusRetrying, 1, "connection refused", false}, {"none", StatusSent, 2, "", false}}},
+		{"lost", []step{{"lost", StatusUnknown, 1, "connection lost", false}}},
+		{"refused then 202", []step{{"refuse", StatusRetrying, 1, "connection refused", false}, {"none", StatusSent, 2, "connection refused", false}}},
 	}
 	dead := deadURL(t)
 	for i, tc := range cases {
@@ -141,9 +142,18 @@ func TestConsumer_Sequences(t *testing.T) {
 				if n > 0 {
 					e.clk.Set(e.nextAttempt(t, id)) // the retry is due
 				}
+				before := e.clk.Now()
 				es := e.entries(t, id, 1)
 				if err := c.Handle(e.ctx, es[0]); err != nil {
 					t.Fatalf("step %d: Handle = %v", n, err)
+				}
+				if st.modes == "429" {
+					if at := e.nextAttempt(t, id); !at.Equal(before.Add(time.Second)) {
+						t.Fatalf("next_attempt_at = %v, want %v", at, before.Add(time.Second))
+					}
+					if !c.Limiter.paused() {
+						t.Fatal("limiter is not paused after a 429")
+					}
 				}
 				j := getJob(t, e.ctx, e.pool, id)
 				if j.Status != st.status || j.Attempts != st.att || j.Retryable != st.retry || !strings.Contains(j.LastError, st.errHas) {
@@ -320,5 +330,40 @@ func TestConsumer_LogsNoPersonalData(t *testing.T) {
 		if name != "" && regexp.MustCompile(`\b`+regexp.QuoteMeta(name)+`\b`).MatchString(out) {
 			t.Fatalf("log contains the first name %q:\n%s", name, out)
 		}
+	}
+}
+
+// cancelTransport cancels a context when the request starts.
+type cancelTransport struct {
+	base   http.RoundTripper
+	cancel context.CancelFunc
+}
+
+func (c cancelTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.cancel()
+	return c.base.RoundTrip(r)
+}
+
+func TestConsumer_CancelDuringSend(t *testing.T) {
+	e := newConsumerEnv(t)
+	srv := newMock(t)
+	p, _ := providerWith(srv.URL, 50*time.Millisecond, "slow")
+	ctx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+	p.HTTP.Transport = cancelTransport{base: p.HTTP.Transport, cancel: cancel}
+	c := e.consumer(p)
+	es := e.entries(t, e.sms[0], 1)
+	if err := c.Handle(ctx, es[0]); err != nil {
+		t.Fatalf("Handle = %v", err)
+	}
+	j := getJob(t, e.ctx, e.pool, e.sms[0])
+	if j.Status != StatusUnknown && j.Status != StatusSent {
+		t.Fatalf("job = %s %q, want unknown or sent", j.Status, j.LastError)
+	}
+	if strings.Contains(j.LastError, "cancel") {
+		t.Fatalf("last_error = %q", j.LastError)
+	}
+	if n := e.pending(t); n != 0 {
+		t.Fatalf("pending = %d", n)
 	}
 }

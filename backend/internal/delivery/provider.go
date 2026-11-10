@@ -12,6 +12,7 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -79,7 +80,7 @@ func NewProvider(baseURL string, timeout time.Duration) *Provider {
 		BaseURL: strings.TrimRight(baseURL, "/"),
 		HTTP: &http.Client{
 			Timeout:       timeout,
-			Transport:     &http.Transport{Proxy: nil, MaxIdleConnsPerHost: 16, IdleConnTimeout: 30 * time.Second},
+			Transport:     &http.Transport{Proxy: nil, MaxIdleConnsPerHost: 64, IdleConnTimeout: 30 * time.Second},
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
@@ -103,8 +104,8 @@ func (p *Provider) Send(ctx context.Context, ch Channel, m Message, reference st
 
 	// Any call of WroteRequest, also with an error, counts as written: the
 	// provider may have the request, so the outcome is not known.
-	var written bool
-	trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { written = true }}
+	var written atomic.Bool
+	trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { written.Store(true) }}
 	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodPost, p.BaseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return Outcome{Kind: Permanent, Err: "request could not be built"}
@@ -113,7 +114,7 @@ func (p *Provider) Send(ctx context.Context, ch Channel, m Message, reference st
 
 	resp, err := p.HTTP.Do(req)
 	if err != nil {
-		return transportOutcome(err, written)
+		return transportOutcome(err, written.Load())
 	}
 	defer resp.Body.Close()
 
