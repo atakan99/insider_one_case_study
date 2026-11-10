@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -46,11 +45,10 @@ const noToolCallText = "You did not call " + segment.ToolName + ". Do not reply 
 
 func (p *SegmentPreviewer) preview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var in struct {
 		Brief string `json:"brief"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Brief == "" {
+	if err := decodeBody(w, r, &in); err != nil || in.Brief == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "The request body must be JSON with a brief of at most 16 KiB.", nil)
 		return
 	}

@@ -120,11 +120,32 @@ func jsonEq(a, b any) bool {
 }
 
 func TestPreview_BadBody(t *testing.T) {
-	for _, body := range []string{briefBody(strings.Repeat("a", 16*1024)), "{", "{}"} {
-		rec := post(newPreview(llm.NewMock(), &fakeCount{}), body)
+	bodies := []string{
+		briefBody(strings.Repeat("a", 16*1024)),
+		"{",
+		"{}",
+		// Trailing data after the object.
+		`{"brief":"hello"} garbage`,
+		`{"brief":"hello"}{"brief":"again"}`,
+		// A valid object padded with whitespace past the 16 KiB limit.
+		`{"brief":"hello"}` + strings.Repeat(" ", 16*1024),
+	}
+	for _, body := range bodies {
+		m := llm.NewMock()
+		rec := post(newPreview(m, &fakeCount{}), body)
 		if rec.Code != 400 || decodeErr(t, rec).Error.Code != "invalid_request" {
-			t.Errorf("%.10q: %d %s", body, rec.Code, rec.Body)
+			t.Errorf("%.20q: %d %s", body, rec.Code, rec.Body)
 		}
+		if n := len(m.Requests()); n != 0 {
+			t.Errorf("%.20q: LLM got %d calls, want 0", body, n)
+		}
+	}
+}
+
+func TestPreview_TrailingWhitespaceWithinLimit(t *testing.T) {
+	rec := post(newPreview(llm.NewMock(), &fakeCount{}), `{"brief":"hello"}`+"\n  \n")
+	if rec.Code != 200 {
+		t.Fatalf("got %d %s, want 200", rec.Code, rec.Body)
 	}
 }
 
