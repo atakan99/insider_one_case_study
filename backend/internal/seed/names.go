@@ -23,3 +23,9 @@ var trLastNames = []string{
 var trCities = []string{"Istanbul", "Ankara", "Izmir", "Bursa", "Antalya", "Adana", "Konya"}
 
 var usCities = []string{"New York", "Los Angeles", "Chicago", "Houston", "Miami", "Seattle", "Boston"}
+
+// TRCities returns a copy of the Turkish city list used for seeding.
+func TRCities() []string { return append([]string(nil), trCities...) }
+
+// USCities returns a copy of the US city list used for seeding.
+func USCities() []string { return append([]string(nil), usCities...) }
