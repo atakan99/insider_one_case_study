@@ -290,3 +290,35 @@ func TestLoadWorker_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_ServiceURLs(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "REDIS_URL": "redis://r"}
+	cfg, err := Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorkerURL != "http://localhost:8082" || cfg.ProviderURL != "http://localhost:8081" {
+		t.Errorf("defaults = %q, %q", cfg.WorkerURL, cfg.ProviderURL)
+	}
+	over := map[string]string{"WORKER_URL": "http://worker:8082", "PROVIDER_URL": "https://provider:8081"}
+	for k, v := range base {
+		over[k] = v
+	}
+	cfg, err = Load(env(over))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorkerURL != "http://worker:8082" || cfg.ProviderURL != "https://provider:8081" {
+		t.Errorf("overrides = %q, %q", cfg.WorkerURL, cfg.ProviderURL)
+	}
+	for _, key := range []string{"WORKER_URL", "PROVIDER_URL"} {
+		bad := map[string]string{key: "worker:8082"}
+		for k, v := range base {
+			bad[k] = v
+		}
+		_, err := Load(env(bad))
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s without scheme: err = %v, want an error that names %s", key, err, key)
+		}
+	}
+}

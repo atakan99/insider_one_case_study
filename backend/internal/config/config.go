@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,10 @@ type Config struct {
 	AnthropicModel string
 	// CORSOrigins is CORS_ORIGINS, a comma-separated list of allowed origins.
 	CORSOrigins []string
+	// WorkerURL is WORKER_URL, the base URL of the worker health check.
+	WorkerURL string
+	// ProviderURL is PROVIDER_URL, the base URL of the provider health check.
+	ProviderURL string
 }
 
 // Load reads the config through getenv. Pass os.Getenv in production and a
@@ -40,6 +45,14 @@ func Load(getenv func(string) string) (Config, error) {
 		LLMMode:         getenv("LLM_MODE"),
 		AnthropicAPIKey: getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:  getenv("ANTHROPIC_MODEL"),
+		WorkerURL:       getenv("WORKER_URL"),
+		ProviderURL:     getenv("PROVIDER_URL"),
+	}
+	if cfg.WorkerURL == "" {
+		cfg.WorkerURL = "http://localhost:8082"
+	}
+	if cfg.ProviderURL == "" {
+		cfg.ProviderURL = "http://localhost:8081"
 	}
 	if cfg.AnthropicModel == "" {
 		cfg.AnthropicModel = "claude-opus-5-5"
@@ -66,6 +79,14 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.RedisURL == "" {
 		errs = append(errs, errors.New("REDIS_URL is required"))
+	}
+	for _, r := range []struct{ key, val string }{
+		{"WORKER_URL", cfg.WorkerURL},
+		{"PROVIDER_URL", cfg.ProviderURL},
+	} {
+		if u, err := url.Parse(r.val); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errs = append(errs, fmt.Errorf("%s must be an http or https URL, for example http://worker:8082", r.key))
+		}
 	}
 	switch cfg.LLMMode {
 	case LLMModeMock:

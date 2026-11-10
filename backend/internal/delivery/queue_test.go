@@ -186,3 +186,32 @@ func TestQueue_NoGroup(t *testing.T) {
 		t.Fatalf("err = %v, want NOGROUP", err)
 	}
 }
+
+func TestQueue_Depth(t *testing.T) {
+	ctx := context.Background()
+	q := NewQueue(deliverytest.NewRedis(t), "c1")
+	if err := q.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Push(ctx, ChannelSMS, []int64{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := q.Read(ctx, ChannelSMS, 2, 100*time.Millisecond); err != nil || len(got) != 2 {
+		t.Fatalf("Read = %v, %v; want 2 entries", got, err)
+	}
+	length, pending, err := q.Depth(ctx, ChannelSMS)
+	if err != nil || length != 3 || pending != 2 {
+		t.Errorf("Depth = %d, %d, %v; want 3, 2, nil", length, pending, err)
+	}
+}
+
+func TestQueue_DepthNoStream(t *testing.T) {
+	ctx := context.Background()
+	q := NewQueue(deliverytest.NewRedis(t), "c1")
+	for _, ch := range Channels {
+		length, pending, err := q.Depth(ctx, ch)
+		if err != nil || length != 0 || pending != 0 {
+			t.Errorf("Depth(%s) = %d, %d, %v; want 0, 0, nil", ch, length, pending, err)
+		}
+	}
+}

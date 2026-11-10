@@ -169,3 +169,21 @@ func (q *Queue) Lag(ctx context.Context, ch Channel) (int64, error) {
 	}
 	return 0, nil
 }
+
+// Depth returns the number of entries in the stream and the number of entries
+// that a consumer read and did not acknowledge. A missing stream or group
+// counts as 0.
+func (q *Queue) Depth(ctx context.Context, ch Channel) (length, pending int64, err error) {
+	length, err = q.rdb.XLen(ctx, streamKey(ch)).Result()
+	if err != nil {
+		return 0, 0, fmt.Errorf("depth %s: %w", streamKey(ch), err)
+	}
+	p, err := q.rdb.XPending(ctx, streamKey(ch), groupName).Result()
+	if err != nil {
+		if strings.Contains(err.Error(), "no such key") || IsNoGroup(err) {
+			return length, 0, nil
+		}
+		return 0, 0, fmt.Errorf("depth %s: %w", streamKey(ch), err)
+	}
+	return length, p.Count, nil
+}
