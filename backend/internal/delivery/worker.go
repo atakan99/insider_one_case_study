@@ -142,6 +142,27 @@ func (w *Worker) push(ctx context.Context, ids map[Channel][]int64) {
 	}
 }
 
+// withoutBacklog drops the channels whose group still has unread entries.
+// The jobs of such a channel are waiting on the stream, and a second entry for
+// each would only use rate tokens. When the lag is unknown or cannot be read,
+// the jobs are pushed again, which is the safe direction.
+func (w *Worker) withoutBacklog(ctx context.Context, ids map[Channel][]int64) map[Channel][]int64 {
+	out := map[Channel][]int64{}
+	for ch, list := range ids {
+		if len(list) == 0 {
+			continue
+		}
+		lag, err := w.Queue.Lag(ctx, ch)
+		if err != nil {
+			w.logErr(ctx, "stream lag", err)
+		} else if lag > 0 {
+			continue
+		}
+		out[ch] = list
+	}
+	return out
+}
+
 func (w *Worker) plan(ctx context.Context) {
 	for ctx.Err() == nil {
 		cid, ids, ok, err := w.Store.PlanNext(ctx, w.Allow, w.Clock.Now())
@@ -218,7 +239,7 @@ func (w *Worker) recover(ctx context.Context) {
 	if ids, err := w.Store.StaleQueued(ctx, now, orDefault(w.StaleAfter, defaultStaleAfter)); err != nil {
 		w.logErr(ctx, "stale queued", err)
 	} else {
-		w.push(ctx, ids)
+		w.push(ctx, w.withoutBacklog(ctx, ids))
 	}
 	if ids, err := w.Store.DueRetries(ctx, now, lateRetry); err != nil {
 		w.logErr(ctx, "late retries", err)

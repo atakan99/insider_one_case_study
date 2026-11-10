@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -176,6 +178,46 @@ func (e *workerEnv) checkDelivery(t *testing.T, wantSent bool) {
 	}
 }
 
+// checkLogsNoPersonalData asserts that the logs hold no phone, no email, no
+// first name (as a whole word) and no message text of the seeded users.
+func (e *workerEnv) checkLogsNoPersonalData(t *testing.T, out string) {
+	t.Helper()
+	if !strings.Contains(out, "job_id") && !strings.Contains(out, "campaign") {
+		t.Fatalf("no log lines:\n%.2000s", out)
+	}
+	words := map[string]bool{}
+	for _, w := range regexp.MustCompile(`[\p{L}\p{N}_]+`).FindAllString(out, -1) {
+		words[w] = true
+	}
+	rs, err := e.pool.Query(e.ctx, `SELECT first_name, phone, email FROM users`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	n := 0
+	for rs.Next() {
+		var name, phone, email string
+		if err := rs.Scan(&name, &phone, &email); err != nil {
+			t.Fatal(err)
+		}
+		n++
+		for _, secret := range []string{phone, email, "Hi " + name, "Subject " + name, "Body " + name} {
+			if secret != "" && strings.Contains(out, secret) {
+				t.Fatalf("log contains %q", secret)
+			}
+		}
+		if name != "" && words[name] {
+			t.Fatalf("log contains the first name %q", name)
+		}
+	}
+	if err := rs.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 {
+		t.Fatal("no users to check")
+	}
+}
+
 func TestWorker_EndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long")
@@ -185,6 +227,8 @@ func TestWorker_EndToEnd(t *testing.T) {
 	e := newWorkerEnv(t, 3000, trUSRule, nil, opts)
 	w := e.worker(100, 32, 50*time.Millisecond)
 	w.RecoverEvery = 200 * time.Millisecond
+	logs := &syncBuf{}
+	w.Log = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	start := time.Now()
 	stop := e.run(t, w)
 	e.campaignDone(t, 90*time.Second)
@@ -197,8 +241,50 @@ func TestWorker_EndToEnd(t *testing.T) {
 	}
 	t.Logf("end-to-end took %v, progress %+v, stats %+v", time.Since(start), p.Channels, providerStats(t, e.srv.URL))
 	e.checkDelivery(t, false)
+	e.checkLogsNoPersonalData(t, logs.String())
 	if p.Channels[ChannelSMS].Sent == 0 || p.Channels[ChannelEmail].Sent == 0 {
 		t.Fatalf("no sent jobs: %+v", p.Channels)
+	}
+}
+
+func TestWorker_RecoverRepushGatedByLag(t *testing.T) {
+	e := newWorkerEnv(t, 200, exampleRule, nil, cleanOpts())
+	if err := e.queue.Ensure(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, err := e.store.PlanNext(e.ctx, segment.Default(), time.Now()); err != nil || !ok {
+		t.Fatalf("PlanNext = %v, %v", ok, err)
+	}
+	// Unread entries on both streams: the queued jobs are not pushed again.
+	if err := e.queue.Push(e.ctx, ChannelSMS, []int64{999999}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.queue.Push(e.ctx, ChannelEmail, []int64{999999}); err != nil {
+		t.Fatal(err)
+	}
+	w := e.worker(100, 1, time.Second)
+	w.StaleAfter = time.Nanosecond
+	w.recover(e.ctx)
+	for _, ch := range Channels {
+		if n, _ := e.queue.rdb.XLen(e.ctx, streamKey(ch)).Result(); n != 1 {
+			t.Fatalf("%s length = %d with unread entries, want 1", ch, n)
+		}
+	}
+	// Read and acknowledge everything: lag is 0, so the jobs are pushed again.
+	for _, ch := range Channels {
+		es, err := e.queue.Read(e.ctx, ch, 10, 100*time.Millisecond)
+		if err != nil || len(es) != 1 {
+			t.Fatalf("Read = %v, %v", es, err)
+		}
+		if err := e.queue.Ack(e.ctx, ch, es[0].StreamID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.recover(e.ctx)
+	for _, ch := range Channels {
+		if n, _ := e.queue.rdb.XLen(e.ctx, streamKey(ch)).Result(); n <= 1 {
+			t.Fatalf("%s length = %d with an empty group, want the queued jobs pushed", ch, n)
+		}
 	}
 }
 

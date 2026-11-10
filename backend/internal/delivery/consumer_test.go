@@ -298,6 +298,31 @@ func TestConsumer_FinishFailsNoResend(t *testing.T) {
 	}
 }
 
+func TestConsumer_NotClaimableSpendsNoToken(t *testing.T) {
+	e := newConsumerEnv(t)
+	srv := newMock(t)
+	if _, err := e.pool.Exec(e.ctx, `UPDATE send_jobs SET status = 'sent' WHERE id = $1`, e.sms[0]); err != nil {
+		t.Fatal(err)
+	}
+	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
+	c.Limiter = NewLimiter(1, e.clk)
+	es := e.entries(t, e.sms[0], 100)
+	for _, en := range es {
+		if err := c.Handle(e.ctx, en); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d := e.clk.Now().Sub(testNow); d > 5*time.Second {
+		t.Fatalf("fake clock advanced %v: tokens were spent on entries that cannot be claimed", d)
+	}
+	if got := providerStats(t, srv.URL)["sms"].Requests; got != 0 {
+		t.Fatalf("requests = %d, want 0", got)
+	}
+	if n := e.pending(t); n != 0 {
+		t.Fatalf("%d entries left unacknowledged", n)
+	}
+}
+
 func TestConsumer_LogsNoPersonalData(t *testing.T) {
 	e := newConsumerEnv(t)
 	srv := newMock(t)

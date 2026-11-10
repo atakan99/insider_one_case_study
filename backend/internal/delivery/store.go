@@ -187,6 +187,20 @@ RETURNING `+jobColumns, id, now))
 	return j, ok, nil
 }
 
+// Claimable reports whether Claim could take the job now. It only saves rate
+// tokens: the UPDATE in Claim stays the gate.
+func (s *Store) Claimable(ctx context.Context, id int64, now time.Time) (bool, error) {
+	var ok bool
+	err := s.inTx(ctx, pgx.ReadOnly, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM send_jobs WHERE id = $1
+AND (status = 'queued' OR (status = 'retrying' AND next_attempt_at <= $2)))`, id, now).Scan(&ok)
+	})
+	if err != nil {
+		return false, fmt.Errorf("check job: %w", err)
+	}
+	return ok, nil
+}
+
 // Release moves a sending job back to queued and subtracts 1 from attempts.
 func (s *Store) Release(ctx context.Context, id int64) error {
 	err := s.inTx(ctx, pgx.ReadWrite, func(tx pgx.Tx) error {

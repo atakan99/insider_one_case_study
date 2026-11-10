@@ -37,6 +37,12 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	// result of an attempt must reach Postgres, also during a shutdown.
 	done := context.WithoutCancel(ctx)
 
+	// An entry for a job that cannot be claimed must not use a rate token.
+	// On an error here, the normal path decides.
+	if ok, err := c.Store.Claimable(ctx, e.JobID, c.Clock.Now()); err == nil && !ok {
+		return c.Queue.Ack(done, c.Channel, e.StreamID)
+	}
+
 	if err := c.Limiter.Wait(ctx); err != nil {
 		return err
 	}

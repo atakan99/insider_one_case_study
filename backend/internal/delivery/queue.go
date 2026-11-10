@@ -150,3 +150,22 @@ func (q *Queue) entries(ctx context.Context, ch Channel, msgs []redis.XMessage) 
 func IsNoGroup(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "NOGROUP")
 }
+
+// Lag returns the number of entries of the stream that the group has not read.
+// A missing stream or group counts as 0. A negative value means that Redis
+// cannot tell, for example after entries were deleted.
+func (q *Queue) Lag(ctx context.Context, ch Channel) (int64, error) {
+	gs, err := q.rdb.XInfoGroups(ctx, streamKey(ch)).Result()
+	if err != nil {
+		if strings.Contains(err.Error(), "no such key") || IsNoGroup(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("lag %s: %w", streamKey(ch), err)
+	}
+	for _, g := range gs {
+		if g.Name == groupName {
+			return g.Lag, nil
+		}
+	}
+	return 0, nil
+}
