@@ -299,7 +299,7 @@ function discard() {
   <Dialog :open="open" @update:open="requestClose">
     <DialogContent
       data-test="review"
-      class="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none md:h-auto md:max-h-[calc(100dvh-2rem)] md:w-[min(920px,calc(100%-2rem))] md:max-w-[920px] md:rounded-lg"
+      class="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none md:h-[min(720px,calc(100dvh-2rem))] md:w-[min(920px,calc(100%-2rem))] md:max-w-[920px] md:rounded-lg"
     >
       <DialogHeader class="border-b px-4 py-4 text-left md:px-6">
         <DialogTitle>Review campaign</DialogTitle>
@@ -340,7 +340,7 @@ function discard() {
           </Tabs>
         </div>
 
-        <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto px-4 py-4 md:grid-cols-2 md:gap-6 md:px-6">
+        <div class="grid min-h-0 flex-1 grid-cols-1 content-start gap-4 overflow-y-auto px-4 py-4 md:grid-cols-2 md:gap-6 md:px-6">
           <Alert v-if="banner" data-test="banner" variant="destructive" class="md:col-span-2">
             <AlertDescription>{{ banner }}</AlertDescription>
           </Alert>

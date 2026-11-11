@@ -57,6 +57,8 @@ describe('campaigns page', () => {
     expect(rows[0]!.text()).toContain('English, Turkish')
     expect(rows[0]!.text()).toContain('Draft')
     expect(rows[1]!.text()).toContain('Approved')
+    expect(rows[0]!.text()).toContain('Nov 10, 2026')
+    expect(w.find('[data-test="new-campaign"]').findComponent(RouterLinkStub).props('to')).toBe('/campaigns/new')
   })
 
   it('shows the five status badges', async () => {

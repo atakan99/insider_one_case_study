@@ -146,6 +146,53 @@ describe('campaign page', () => {
     expect(w.find('[data-test="review-button"]').exists()).toBe(false)
   })
 
+  it('shows the created date, the totals and the lengths with the longest name', async () => {
+    get.mockResolvedValue(campaign())
+    const w = make()
+    await flushPromises()
+    expect(w.find('[data-test="meta"]').text()).toContain('Nov 10, 2026')
+    expect(w.find('[data-test="meta"]').text()).toContain('980 SMS · 1,212 email')
+    // 'Merhaba ' is 8 runes and the longest first name is 14.
+    expect(w.find('[data-count="sms"]').text()).toBe('22 / 160')
+    expect(w.find('[data-count="subject"]').text()).toBe('Subject 7 / 80')
+    expect(w.findComponent(RouterLinkStub).props('to')).toBe('/campaigns')
+  })
+
+  it('shows one language at a time and no tabs for one language', async () => {
+    get.mockResolvedValue(campaign())
+    const one = make()
+    await flushPromises()
+    expect(one.find('[data-test="lang-tab"]').exists()).toBe(false)
+
+    const en = { language: 'en', sms: 'Hello', email_subject: 'Sale', email_body: 'Body', sms_count: 3, email_count: 4, first_name_runes: 5 }
+    get.mockResolvedValue(campaign({ contents: [en, campaign().contents[0]!] }))
+    const w = make()
+    await flushPromises()
+    expect(w.findAll('[data-test="lang-tab"]').map(t => t.text())).toEqual(['English', 'Turkish'])
+    expect(w.findAll('[data-language]').map(c => c.attributes('data-language'))).toEqual(['en'])
+    expect(w.find('[data-language="en"]').text()).toContain('3 SMS · 4 email')
+  })
+
+  it('shows a delivery summary only for channels with messages', async () => {
+    get.mockResolvedValue(campaign({ status: 'completed' }))
+    progress.mockResolvedValue({ campaign_id: 12, status: 'completed', channels: { sms: { ...zero, total: 1101, sent: 1095, failed: 2, unknown: 4 }, email: zero } })
+    const w = make()
+    await flushPromises()
+    const rows = w.findAll('[data-summary-row]')
+    expect(rows.map(r => r.attributes('data-summary-row'))).toEqual(['sms'])
+    expect(rows[0]!.text()).toContain('1,095 of 1,101 sent')
+    expect(rows[0]!.text()).toContain('2 failed')
+    expect(rows[0]!.text()).toContain('4 unknown')
+    expect(rows[0]!.text()).not.toContain('skipped')
+  })
+
+  it('a draft shows no delivery summary', async () => {
+    get.mockResolvedValue(campaign({ status: 'draft', approved_at: null }))
+    const w = make()
+    await flushPromises()
+    expect(w.find('[data-test="delivery-summary"]').exists()).toBe(false)
+  })
+
   it('a draft shows Review & approve and reloads after approval', async () => {
     get.mockResolvedValue(campaign({ status: 'draft', approved_at: null }))
     const w = make()

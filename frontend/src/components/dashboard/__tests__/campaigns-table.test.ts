@@ -13,7 +13,7 @@ describe('campaigns table', () => {
   it('shows seven columns and a link to each campaign', () => {
     const w = mount(CampaignsTable, { props: { campaigns: [row] }, global: { stubs } })
     const heads = w.findAll('thead th').map(h => h.text())
-    expect(heads).toEqual(['Campaign', 'Status', 'Send jobs', 'Sent %', 'Failed %', 'Unknown %', 'Duration'])
+    expect(heads).toEqual(['Campaign', 'Status', 'Messages', 'Sent %', 'Failed %', 'Unknown %', 'Duration'])
     expect(w.find('a[href="/campaigns/7"]').exists()).toBe(true)
     const text = w.find('tbody').text()
     expect(text).toContain('Spring sale')

@@ -616,3 +616,24 @@ Claude writes this log. It records the implementation choices that Claude made o
   - Sends whose tokens are less than 100 ms apart can leave together. At 100 per second, this is 10 requests at most. It is equal to the burst of the mock provider.
   - When the claim and the load always take more than 100 ms, no message is sent. The worker logs a warning for each new token.
   - A compose run with 1,803 requests gave `rate_limited: 0`, no such warning, and 98 sends at most in one second for each channel.
+
+## D-087 The read-only pages reuse the message preview
+
+- **Context:** The campaign page and the compose page showed the SMS, the subject and the body as plain text across the full card width. Lines had about 150 characters. The labels looked like the copy. The review window already had a preview with an SMS bubble and an email frame.
+- **Options:** Restyle the plain text. Reuse `message-preview.vue` on both pages.
+- **Choice:** A new `content-view.vue` shows the SMS preview next to the email preview. The campaign page and the compose page use it. `message-preview.vue` takes an optional name. With no name, `{{first_name}}` shows as a chip.
+- **Why:** One component gives the three places the same look. The chip keeps the token that the marketer types in the review window, so the two views agree. The email body has a `max-w-prose` limit.
+
+## D-088 The campaign page shows one language at a time
+
+- **Context:** The campaign page stacked one card for each language. For a sent campaign, the delivery section was below all the email bodies.
+- **Options:** Keep the stack and move the delivery section up. Show one language with tabs and add a short delivery summary at the top.
+- **Choice:** Tabs select the language when the campaign has more than one. A summary card below the header shows a stacked bar for each channel and a link to the delivery section. The page computes the lengths with `renderedLength` and `first_name_runes`, the same as the review window.
+- **Why:** The page length does not grow with the number of languages. The marketer sees the result of the send without a scroll. The summary uses the progress that the page already loads, so the API does not change.
+
+## D-089 Counts, dates and names use one format
+
+- **Context:** Pages showed `tr`, `TR` and "Turkish" for the same language. Some counts had no thousands separator. The channel order was different between pages. Dates used the browser locale.
+- **Choice:** `lib/format.ts` has `formatCount` and `formatDateTime`, both in `en-US`. All pages use `languageName`. The channel order is SMS, then email. The dashboard column "Send jobs" is now "Messages". The page content has a `max-w-6xl` limit in the layout.
+- **Why:** The UI is English only (D-022). "Send job" is an internal term that the marketer does not know.
+- **Limits:** A click on a draft row in the campaign list still opens the review window. The tests of slice 06 require this. The list has no recipient count, because `GET /api/campaigns` does not return one.

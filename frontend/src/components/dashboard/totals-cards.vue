@@ -3,6 +3,7 @@ import type { ChannelTotals } from '@/lib/dashboard'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { successRate } from '@/lib/dashboard'
+import { formatCount } from '@/lib/format'
 
 defineProps<{ totals: { sms: ChannelTotals, email: ChannelTotals } }>()
 
@@ -35,7 +36,7 @@ const CARDS = [
           </CardHeader>
           <CardContent class="px-4">
             <div class="text-2xl font-semibold tabular-nums" :class="c.cls">
-              {{ totals[ch.key][c.key] }}
+              {{ formatCount(totals[ch.key][c.key]) }}
             </div>
             <p v-if="'hint' in c" class="text-muted-foreground text-xs">
               {{ c.hint }}

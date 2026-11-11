@@ -8,8 +8,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { languageName } from '@/lib/campaigns'
 import { ContentRequestError, generateContent } from '@/lib/content'
+import { formatCount } from '@/lib/format'
 
+import ContentView from './content-view.vue'
 import ReviewDialog from './review-dialog.vue'
 
 interface LangCard {
@@ -26,7 +30,6 @@ interface LangCard {
 const props = defineProps<{ brief: string, rule: unknown, runId: number }>()
 const emit = defineEmits<{ 'update:running': [running: boolean] }>()
 
-const NAMES: Record<string, string> = { tr: 'Turkish', en: 'English' }
 const CLOSED_MESSAGE = 'The connection closed early. Try again.'
 
 const cards = ref<LangCard[]>([])
@@ -40,10 +43,6 @@ const reviewOpen = ref(false)
 const router = useRouter()
 let controller: AbortController | null = null
 let token = 0
-
-function langName(code: string) {
-  return NAMES[code] ?? code.toUpperCase()
-}
 
 function setRunning(v: boolean) {
   running.value = v
@@ -169,11 +168,9 @@ onBeforeUnmount(() => {
 
     <Card v-for="card in cards" :key="card.code" :data-language="card.code">
       <CardHeader>
-        <CardTitle class="flex items-center gap-2">
-          {{ langName(card.code) }}
-          <span class="text-sm font-normal text-muted-foreground">
-            {{ card.email }} email, {{ card.sms }} SMS
-          </span>
+        <CardTitle class="flex flex-wrap items-baseline gap-2">
+          {{ languageName(card.code) }}
+          <span class="text-sm font-normal text-muted-foreground tabular-nums">{{ formatCount(card.sms) }} SMS · {{ formatCount(card.email) }} email</span>
           <Badge v-if="!card.final && !card.error && card.draft" variant="secondary">
             Draft
           </Badge>
@@ -189,40 +186,17 @@ onBeforeUnmount(() => {
         <Alert v-else-if="card.closed" variant="destructive">
           <AlertDescription>{{ CLOSED_MESSAGE }}</AlertDescription>
         </Alert>
-        <template v-if="!card.error && (card.final || card.draft)">
-          <div class="space-y-4" :class="card.final ? '' : 'text-muted-foreground italic'">
-            <div>
-              <h4 class="text-sm font-medium">
-                SMS
-              </h4>
-              <p class="whitespace-pre-wrap" data-field="sms">
-                {{ (card.final?.content ?? card.draft)!.sms }}
-              </p>
-              <p v-if="card.final" class="text-xs text-muted-foreground">
-                {{ card.final.limits.sms_runes }} / 160
-              </p>
-            </div>
-            <div>
-              <h4 class="text-sm font-medium">
-                Email subject
-              </h4>
-              <p class="whitespace-pre-wrap" data-field="subject">
-                {{ (card.final?.content ?? card.draft)!.email_subject }}
-              </p>
-              <p v-if="card.final" class="text-xs text-muted-foreground">
-                {{ card.final.limits.email_subject_runes }} / 80
-              </p>
-            </div>
-            <div>
-              <h4 class="text-sm font-medium">
-                Email body
-              </h4>
-              <p class="whitespace-pre-wrap" data-field="body">
-                {{ (card.final?.content ?? card.draft)!.email_body }}
-              </p>
-            </div>
-          </div>
-        </template>
+        <ContentView
+          v-if="!card.error && (card.final || card.draft)"
+          :content="(card.final?.content ?? card.draft)!"
+          :sms-length="card.final?.limits.sms_runes"
+          :subject-length="card.final?.limits.email_subject_runes"
+          :class="card.final ? '' : 'text-muted-foreground italic'"
+        />
+        <div v-else-if="!card.error && !card.closed" data-test="card-skeleton" class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+          <Skeleton class="h-24" />
+          <Skeleton class="h-40" />
+        </div>
       </CardContent>
     </Card>
 

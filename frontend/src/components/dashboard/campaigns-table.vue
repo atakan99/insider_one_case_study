@@ -7,6 +7,7 @@ import StatusBadge from '@/components/campaign/status-badge.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDuration, percent } from '@/lib/dashboard'
+import { formatCount } from '@/lib/format'
 
 defineProps<{ campaigns: DashboardStats['campaigns'] }>()
 </script>
@@ -30,7 +31,7 @@ defineProps<{ campaigns: DashboardStats['campaigns'] }>()
               <TableHead>Campaign</TableHead>
               <TableHead>Status</TableHead>
               <TableHead class="text-right">
-                Send jobs
+                Messages
               </TableHead>
               <TableHead class="text-right">
                 Sent %
@@ -57,7 +58,7 @@ defineProps<{ campaigns: DashboardStats['campaigns'] }>()
                 <StatusBadge :status="c.status" />
               </TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ c.total }}
+                {{ formatCount(c.total) }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
                 {{ percent(c.sent, c.total) }}

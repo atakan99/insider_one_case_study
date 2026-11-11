@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CampaignRequestError, languageName, listCampaigns } from '@/lib/campaigns'
+import { formatDateTime as when } from '@/lib/format'
 
 const router = useRouter()
 const campaigns = ref<CampaignSummary[] | null>(null)
@@ -32,10 +33,6 @@ onMounted(load)
 
 function languages(c: CampaignSummary) {
   return c.languages.map(languageName).join(', ')
-}
-
-function when(iso: string) {
-  return new Date(iso).toLocaleString()
 }
 
 function openCampaign(c: CampaignSummary) {
@@ -61,13 +58,20 @@ function onApproved(id: number) {
 
 <template>
   <div class="space-y-6">
-    <div class="space-y-2">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Campaigns
-      </h1>
-      <p class="text-muted-foreground">
-        Drafts wait for your review. Approved campaigns are sent in the background.
-      </p>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div class="space-y-2">
+        <h1 class="text-2xl font-bold tracking-tight">
+          Campaigns
+        </h1>
+        <p class="text-muted-foreground">
+          Drafts wait for your review. Approved campaigns are sent in the background.
+        </p>
+      </div>
+      <Button v-if="campaigns && campaigns.length > 0" as-child data-test="new-campaign" class="w-full sm:w-auto">
+        <RouterLink to="/campaigns/new">
+          New campaign
+        </RouterLink>
+      </Button>
     </div>
 
     <Alert v-if="error" variant="destructive">
@@ -106,8 +110,10 @@ function onApproved(id: number) {
               data-test="campaign-row"
               class="cursor-pointer"
               tabindex="0"
+              role="link"
               @click="openCampaign(c)"
               @keydown.enter="openCampaign(c)"
+              @keydown.space.prevent="openCampaign(c)"
             >
               <TableCell class="font-medium tabular-nums">
                 #{{ c.id }}
@@ -119,7 +125,7 @@ function onApproved(id: number) {
               <TableCell>
                 <StatusBadge :status="c.status" />
               </TableCell>
-              <TableCell class="text-muted-foreground">
+              <TableCell class="text-muted-foreground tabular-nums">
                 {{ when(c.created_at) }}
               </TableCell>
             </TableRow>
@@ -133,8 +139,10 @@ function onApproved(id: number) {
           :key="c.id"
           class="cursor-pointer py-4"
           tabindex="0"
+          role="link"
           @click="openCampaign(c)"
           @keydown.enter="openCampaign(c)"
+          @keydown.space.prevent="openCampaign(c)"
         >
           <CardContent class="space-y-2 px-4">
             <div class="flex items-center justify-between gap-2">

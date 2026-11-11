@@ -77,7 +77,7 @@ onUnmounted(() => {
 <template>
   <div class="space-y-6">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
-      <h1 class="text-2xl font-semibold tracking-tight">
+      <h1 class="text-2xl font-bold tracking-tight">
         Dashboard
       </h1>
       <p v-if="failed" class="text-muted-foreground text-sm">

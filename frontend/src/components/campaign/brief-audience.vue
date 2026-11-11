@@ -6,7 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { languageName } from '@/lib/campaigns'
+import { formatCount } from '@/lib/format'
 import { apiErrorMessage, previewSegment } from '@/lib/segments'
 
 import ContentCards from './content-cards.vue'
@@ -15,10 +18,10 @@ const MAX_BRIEF = 1000
 
 // Each brief uses only fields that the segment allowlist has.
 const SUGGESTIONS = [
-  'Remind customers in Istanbul who added to cart in the last 30 days but did not buy to complete their order with 30% off. Friendly and short.',
-  'Thank customers who spent over 5000 and ordered more than 5 times. Offer early access to the new collection.',
-  'Win back customers who have not bought in 90 days. Offer free shipping on the next order.',
-  'Welcome customers who signed up in the last 14 days and have no orders yet. Offer 10% off a first order.',
+  { label: 'Cart reminder', text: 'Remind customers in Istanbul who added to cart in the last 30 days but did not buy to complete their order with 30% off. Friendly and short.' },
+  { label: 'Loyal customers', text: 'Thank customers who spent over 5000 and ordered more than 5 times. Offer early access to the new collection.' },
+  { label: 'Win-back', text: 'Win back customers who have not bought in 90 days. Offer free shipping on the next order.' },
+  { label: 'Welcome', text: 'Welcome customers who signed up in the last 14 days and have no orders yet. Offer 10% off a first order.' },
 ]
 
 const brief = ref('')
@@ -63,18 +66,20 @@ function submit() {
         placeholder="Example: Send a winter sale to customers in Turkey who bought in the last 90 days."
         aria-label="Campaign brief"
       />
-      <div class="flex flex-wrap gap-2" role="group" aria-label="Suggested briefs">
+      <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Suggested briefs">
+        <span class="text-muted-foreground text-sm">Try an example:</span>
         <Button
-          v-for="text in SUGGESTIONS"
-          :key="text"
+          v-for="s in SUGGESTIONS"
+          :key="s.label"
           type="button"
           variant="outline"
           size="sm"
-          class="h-auto max-w-full whitespace-normal py-1 text-left font-normal"
+          class="rounded-full font-normal"
+          :title="s.text"
           :disabled="pending || running"
-          @click="brief = text"
+          @click="brief = s.text"
         >
-          {{ text }}
+          {{ s.label }}
         </Button>
       </div>
       <div class="flex items-center justify-between">
@@ -87,9 +92,12 @@ function submit() {
       </div>
     </div>
 
-    <p v-if="pending" class="text-sm text-muted-foreground" role="status">
-      Generating segment…
-    </p>
+    <div v-if="pending" class="space-y-3" role="status">
+      <p class="text-sm text-muted-foreground">
+        Generating segment…
+      </p>
+      <Skeleton class="h-40 w-full" />
+    </div>
 
     <Alert v-if="errorMessage" variant="destructive">
       <AlertDescription>{{ errorMessage }}</AlertDescription>
@@ -106,67 +114,67 @@ function submit() {
         <dl class="grid grid-cols-3 gap-4">
           <div>
             <dt class="text-sm text-muted-foreground">
-              Email
-            </dt>
-            <dd class="text-2xl font-semibold">
-              {{ result.audience.email }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-sm text-muted-foreground">
               Reachable
             </dt>
-            <dd class="text-2xl font-semibold">
-              {{ result.audience.reachable }}
+            <dd class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(result.audience.reachable) }}
             </dd>
           </div>
           <div>
             <dt class="text-sm text-muted-foreground">
               SMS
             </dt>
-            <dd class="text-2xl font-semibold">
-              {{ result.audience.sms }}
+            <dd class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(result.audience.sms) }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-sm text-muted-foreground">
+              Email
+            </dt>
+            <dd class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(result.audience.email) }}
             </dd>
           </div>
         </dl>
-        <p class="text-sm text-muted-foreground">
+        <p class="text-sm text-muted-foreground tabular-nums">
           <Badge variant="secondary">
             excluded: no consent
           </Badge>
-          {{ result.audience.no_consent }}
-          of {{ result.audience.matched }} matched
+          {{ formatCount(result.audience.no_consent) }}
+          of {{ formatCount(result.audience.matched) }} matched
         </p>
 
-        <table v-if="result.audience.languages.length" class="w-full text-sm">
+        <table v-if="result.audience.languages.length" class="w-full text-sm tabular-nums">
           <thead>
-            <tr class="text-left text-muted-foreground">
-              <th class="py-1 font-medium">
+            <tr class="border-b text-left text-muted-foreground">
+              <th class="py-1.5 font-medium">
                 Language
               </th>
-              <th class="py-1 font-medium">
-                Email
-              </th>
-              <th class="py-1 font-medium">
+              <th class="py-1.5 text-right font-medium">
                 SMS
               </th>
-              <th class="py-1 font-medium">
+              <th class="py-1.5 text-right font-medium">
+                Email
+              </th>
+              <th class="py-1.5 text-right font-medium">
                 Excluded: no consent
               </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="lang in result.audience.languages" :key="lang.code">
-              <td class="py-1">
-                {{ lang.code }}
+              <td class="py-1.5">
+                {{ languageName(lang.code) }}
               </td>
-              <td class="py-1">
-                {{ lang.email }}
+              <td class="py-1.5 text-right">
+                {{ formatCount(lang.sms) }}
               </td>
-              <td class="py-1">
-                {{ lang.sms }}
+              <td class="py-1.5 text-right">
+                {{ formatCount(lang.email) }}
               </td>
-              <td class="py-1">
-                {{ lang.no_consent }}
+              <td class="py-1.5 text-right">
+                {{ formatCount(lang.no_consent) }}
               </td>
             </tr>
           </tbody>

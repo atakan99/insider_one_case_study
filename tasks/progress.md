@@ -123,3 +123,18 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Next: user review of the changes. Nothing is committed.
 - Open questions:
   - Sends whose tokens are less than 100 ms apart can leave together. This is 10 requests at most at 100 per second.
+
+## 2026-11-11 — UI and UX pass
+- Done: a frontend-only pass after a design review. No backlog item and no API change.
+  - The campaign page has a back link and a line with the created date and the totals. It has a delivery summary with a stacked bar, and language tabs. The SMS shows next to the email (D-087, D-088).
+  - `{{first_name}}` shows as a chip. The campaign page shows the SMS length and the subject length.
+  - The compose page uses the same content view. The suggested briefs are short labels. The cards show a skeleton before the first draft.
+  - Counts, dates, language names and the channel order use one format on all pages (D-089).
+  - The campaign list has a "New campaign" button. Its rows answer the Space key.
+  - The page content has a `max-w-6xl` limit.
+- Verified with: `make verify` exit 0 (234 frontend tests, 12 new). Chrome through the debugging protocol showed `/campaigns/5`, `/campaigns`, `/campaigns/new` and `/dashboard` at 1440 px, and the first three at 390 px. `document.documentElement.scrollWidth` was 390 at 390 px. The compose page run used stub responses in the browser, because the running api has `LLM_MODE=anthropic`.
+- Next: user review of the changes. Nothing is committed.
+- Open questions:
+  - A click on a draft row in the list opens the review window, and other rows open the campaign page.
+  - The list has no recipient count, because the API does not return one.
+  - The dashboard and the list still show "Loading…" text or nothing during the first load.

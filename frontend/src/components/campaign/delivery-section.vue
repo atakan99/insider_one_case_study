@@ -16,8 +16,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CampaignRequestError } from '@/lib/campaigns'
+import { CampaignRequestError, languageName } from '@/lib/campaigns'
 import { listSendJobs, retryCampaign } from '@/lib/delivery'
+import { formatCount as fmt } from '@/lib/format'
+
+import DeliveryBar from './delivery-bar.vue'
 
 type Chip = 'all' | 'sent' | 'retrying' | 'failed' | 'unknown' | 'skipped'
 
@@ -57,8 +60,6 @@ const STATUS_CLASS: Record<DeliveryStatus, string> = {
   unknown: 'bg-warning/15 text-warning',
   skipped: 'bg-muted text-muted-foreground',
 }
-
-const fmt = (n: number) => n.toLocaleString('en-US')
 
 const status = ref<Chip>('all')
 const channel = ref<DeliveryChannel | 'all'>('all')
@@ -201,6 +202,7 @@ async function sendAgain() {
           </CardTitle>
         </CardHeader>
         <CardContent class="grid grid-cols-2 gap-x-4 gap-y-1 px-4 text-sm tabular-nums">
+          <DeliveryBar :progress="c.p" class="col-span-2 mb-2" />
           <span class="text-muted-foreground">Sent</span><span class="text-right">{{ fmt(c.p.sent) }}</span>
           <span class="text-muted-foreground">Failed</span><span class="text-right">{{ fmt(c.p.failed) }}</span>
           <span class="text-muted-foreground">Unknown</span><span class="text-right">{{ fmt(c.p.unknown) }}</span>
@@ -268,9 +270,7 @@ async function sendAgain() {
                 User #{{ j.user_id }}
               </TableCell>
               <TableCell>{{ j.channel === 'sms' ? 'SMS' : 'Email' }}</TableCell>
-              <TableCell class="uppercase">
-                {{ j.language }}
-              </TableCell>
+              <TableCell>{{ languageName(j.language) }}</TableCell>
               <TableCell>
                 <Badge variant="outline" class="border-transparent" :class="STATUS_CLASS[j.status]">
                   {{ STATUS_LABEL[j.status] }}
@@ -298,7 +298,7 @@ async function sendAgain() {
               </Badge>
             </div>
             <p class="text-muted-foreground text-xs">
-              {{ j.channel === 'sms' ? 'SMS' : 'Email' }} · {{ j.language.toUpperCase() }} · {{ j.attempts }} {{ j.attempts === 1 ? 'attempt' : 'attempts' }}
+              {{ j.channel === 'sms' ? 'SMS' : 'Email' }} · {{ languageName(j.language) }} · {{ j.attempts }} {{ j.attempts === 1 ? 'attempt' : 'attempts' }}
             </p>
             <p v-if="j.status === 'unknown'" class="text-muted-foreground text-xs">
               may be delivered

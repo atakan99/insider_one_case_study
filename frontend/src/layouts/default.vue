@@ -38,7 +38,9 @@ const { contentLayout } = storeToRefs(themeStore)
           contentLayout === 'centered' ? 'container mx-auto ' : '',
         )"
       >
-        <router-view />
+        <div class="mx-auto w-full max-w-6xl">
+          <router-view />
+        </div>
       </main>
     </SidebarInset>
   </SidebarProvider>

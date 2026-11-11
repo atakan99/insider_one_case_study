@@ -3,6 +3,7 @@ import type { DashboardStats } from '@/lib/dashboard'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatCount } from '@/lib/format'
 
 defineProps<{ failures: DashboardStats['failures'], meanAttempts: DashboardStats['mean_attempts'] }>()
 
@@ -45,10 +46,10 @@ function attempts(v: number | null): string {
               </TableCell>
               <TableCell>{{ f.reason }}</TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ f.sms }}
+                {{ formatCount(f.sms) }}
               </TableCell>
               <TableCell class="text-right tabular-nums">
-                {{ f.email }}
+                {{ formatCount(f.email) }}
               </TableCell>
             </TableRow>
           </TableBody>
