@@ -13,6 +13,14 @@ import ContentCards from './content-cards.vue'
 
 const MAX_BRIEF = 1000
 
+// Each brief uses only fields that the segment allowlist has.
+const SUGGESTIONS = [
+  'Remind customers in Istanbul who added to cart in the last 30 days but did not buy to complete their order with 30% off. Friendly and short.',
+  'Thank customers who spent over 5000 and ordered more than 5 times. Offer early access to the new collection.',
+  'Win back customers who have not bought in 90 days. Offer free shipping on the next order.',
+  'Welcome customers who signed up in the last 14 days and have no orders yet. Offer 10% off a first order.',
+]
+
 const brief = ref('')
 const length = computed(() => brief.value.length)
 const canSubmit = computed(() => brief.value.trim() !== '' && length.value <= MAX_BRIEF)
@@ -55,11 +63,25 @@ function submit() {
         placeholder="Example: Send a winter sale to customers in Turkey who bought in the last 90 days."
         aria-label="Campaign brief"
       />
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Suggested briefs">
+        <Button
+          v-for="text in SUGGESTIONS"
+          :key="text"
+          type="button"
+          variant="outline"
+          size="sm"
+          class="h-auto max-w-full whitespace-normal py-1 text-left font-normal"
+          :disabled="pending || running"
+          @click="brief = text"
+        >
+          {{ text }}
+        </Button>
+      </div>
       <div class="flex items-center justify-between">
         <span class="text-sm" :class="length > MAX_BRIEF ? 'text-destructive' : 'text-muted-foreground'">
           {{ length }} / {{ MAX_BRIEF }}
         </span>
-        <Button :disabled="!canSubmit || pending || running" @click="submit">
+        <Button data-submit :disabled="!canSubmit || pending || running" @click="submit">
           Find audience
         </Button>
       </div>

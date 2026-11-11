@@ -275,6 +275,7 @@ func TestDecodeAnswer(t *testing.T) {
 		{"500 rune reason", `{"status":"unsupported","reason":` + long(500) + `}`, true, ""},
 		{"unknown status", `{"status":"maybe"}`, false, "status"},
 		{"missing status", `{}`, false, "status"},
+		{"ok null rule", `{"status":"ok","rule":null}`, false, "rule"},
 		{"ok no rule", `{"status":"ok"}`, false, "rule"},
 		{"ok bad rule", `{"status":"ok","rule":` + root(cond("city", "eq", `"Paris"`)) + `}`, false, "rule.conditions[0].value"},
 		{"unsupported no reason", `{"status":"unsupported"}`, false, "reason"},

@@ -117,8 +117,22 @@ func TestToolSchema(t *testing.T) {
 		}
 	}
 	req, _ := m["required"].([]any)
-	if len(req) != 1 || req[0] != "status" {
+	// rule must be required: with strict decoding the model leaves out an
+	// optional rule and the answer has status ok with no rule. The model sends
+	// null for rule when the status is unsupported.
+	if len(req) != 2 || req[0] != "status" || req[1] != "rule" {
 		t.Errorf("required = %v", req)
+	}
+	rule, _ := m["properties"].(map[string]any)["rule"].(map[string]any)
+	anyOf, _ := rule["anyOf"].([]any)
+	hasNull := false
+	for _, v := range anyOf {
+		if n, _ := v.(map[string]any); n["type"] == "null" {
+			hasNull = true
+		}
+	}
+	if !hasNull {
+		t.Errorf("rule schema does not allow null: %v", rule)
 	}
 }
 
