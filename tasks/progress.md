@@ -132,7 +132,9 @@ Append one entry per session. Use the template below. Put the newest entry at th
   - Counts, dates, language names and the channel order use one format on all pages (D-089).
   - The campaign list has a "New campaign" button. Its rows answer the Space key.
   - The page content has a `max-w-6xl` limit.
+  - The review window has one height on a desktop: 720 px, or the screen height minus 32 px if that is less. A change of tab does not resize it.
 - Verified with: `make verify` exit 0 (234 frontend tests, 12 new). Chrome through the debugging protocol showed `/campaigns/5`, `/campaigns`, `/campaigns/new` and `/dashboard` at 1440 px, and the first three at 390 px. `document.documentElement.scrollWidth` was 390 at 390 px. The compose page run used stub responses in the browser, because the running api has `LLM_MODE=anthropic`.
+- Review window check: the height was the same on the SMS tab and the Email tab at 1440, 1024, 800 and 390 px.
 - Next: user review of the changes. Nothing is committed.
 - Open questions:
   - A click on a draft row in the list opens the review window, and other rows open the campaign page.

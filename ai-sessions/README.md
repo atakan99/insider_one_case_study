@@ -24,4 +24,9 @@ Exported from Claude Code JSONL transcripts by `export_sessions.py`. Hidden syst
 | 18 | [Option 07 selection](18-option-07-selection.md) | 2026-11-10 12:14 | 2026-11-10 16:53 | 24 |
 | 19 | [Dashboard UI/UX enhancements](19-dashboard-ui-ux-enhancements.md) | 2026-11-10 12:18 | 2026-11-10 12:20 | 0 |
 | 20 | [Worker.go delivery option 08](20-worker-go-delivery-option-08.md) | 2026-11-10 18:48 | 2026-11-10 19:52 | 16 |
-| 21 | [Exporting AI sessions script](21-exporting-ai-sessions-script.md) | 2026-11-11 08:35 | 2026-11-11 08:35 | 0 |
+| 21 | [Exporting AI sessions script](21-exporting-ai-sessions-script.md) | 2026-11-11 08:35 | 2026-11-11 08:38 | 0 |
+| 22 | [Rate limiting, review dialog, and mock docs](22-rate-limiting-review-dialog-and-mock-docs.md) | 2026-11-11 09:39 | 2026-11-11 10:45 | 0 |
+| 23 | [Plugging in a Claude API key](23-plugging-in-a-claude-api-key.md) | 2026-11-11 11:41 | 2026-11-11 11:41 | 0 |
+| 24 | [Winter sale segment for Istanbul customers](24-winter-sale-segment-for-istanbul-customers.md) | 2026-11-11 11:49 | 2026-11-11 11:52 | 0 |
+| 25 | [Campaign message suggestions under input box](25-campaign-message-suggestions-under-input-box.md) | 2026-11-11 11:57 | 2026-11-11 12:03 | 0 |
+| 26 | [UI/UX readability improvements](26-ui-ux-readability-improvements.md) | 2026-11-11 15:26 | 2026-11-11 15:37 | 0 |
