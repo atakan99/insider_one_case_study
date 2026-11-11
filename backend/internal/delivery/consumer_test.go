@@ -301,12 +301,53 @@ func TestConsumer_FinishFailsNoResend(t *testing.T) {
 	}
 }
 
+// A skip sends nothing. When its result cannot be written, the job goes back
+// to queued, so the recovery does not set it to unknown.
+func TestConsumer_SkipWriteFailsReleases(t *testing.T) {
+	e := newConsumerEnv(t)
+	srv := newMock(t)
+	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
+	exec(t, e.ctx, e.pool, `UPDATE users SET phone = '' WHERE id = (SELECT user_id FROM send_jobs WHERE id = $1)`, e.sms[0])
+	fail := true
+	c.finishErr = func() error {
+		if fail {
+			fail = false
+			return errors.New("database is down")
+		}
+		return nil
+	}
+	es := e.entries(t, e.sms[0], 1)
+	if err := c.Handle(e.ctx, es[0]); err == nil {
+		t.Fatal("Handle = nil, want the Finish error")
+	}
+	if j := getJob(t, e.ctx, e.pool, e.sms[0]); j.Status != StatusQueued || j.Attempts != 0 {
+		t.Fatalf("job = %s attempts %d, want queued 0", j.Status, j.Attempts)
+	}
+	if n, err := e.store.ExpireSending(e.ctx, e.clk.Now().Add(time.Hour), time.Second); err != nil || n != 0 {
+		t.Fatalf("ExpireSending = %d, %v, want 0", n, err)
+	}
+	claimed, err := e.queue.AutoClaim(e.ctx, ChannelSMS, 0, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("AutoClaim = %v, %v", claimed, err)
+	}
+	if err := c.Handle(e.ctx, claimed[0]); err != nil {
+		t.Fatal(err)
+	}
+	if j := getJob(t, e.ctx, e.pool, e.sms[0]); j.Status != StatusSkipped || j.LastError != SkipNoContact || j.Attempts != 1 {
+		t.Fatalf("job = %s %q attempts %d", j.Status, j.LastError, j.Attempts)
+	}
+	if got := providerStats(t, srv.URL)["sms"].Requests; got != 0 {
+		t.Fatalf("requests = %d, want 0", got)
+	}
+	if n := e.pending(t); n != 0 {
+		t.Fatalf("pending = %d, want 0", n)
+	}
+}
+
 func TestConsumer_NotClaimableSpendsNoToken(t *testing.T) {
 	e := newConsumerEnv(t)
 	srv := newMock(t)
-	if _, err := e.pool.Exec(e.ctx, `UPDATE send_jobs SET status = 'sent' WHERE id = $1`, e.sms[0]); err != nil {
-		t.Fatal(err)
-	}
+	setJobs(t, e.ctx, e.pool, e.sms[:1], StatusSent, "")
 	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
 	c.Limiter = NewLimiter(1, e.clk)
 	es := e.entries(t, e.sms[0], 100)

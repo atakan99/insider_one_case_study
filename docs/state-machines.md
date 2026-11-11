@@ -9,13 +9,13 @@ Each section gives:
 - the transitions, with the code that makes them
 - the guard that blocks other transitions
 
-The last section lists the gaps that we found.
+The last section lists the gaps that we found and the changes that closed them.
 
 ## 1. Campaign status
 
 **State:** `campaigns.status` in Postgres.
 
-**Guard:** explicit. The trigger `campaigns_frozen_after_approval` in `00003_send_jobs.sql` allows only the transitions in the table. The writes are in three packages.
+**Guard:** explicit. The trigger `campaigns_frozen_after_approval` in `00003_send_jobs.sql` allows only the transitions in the table. The writes are in three packages. They use the constants of `campaign.Status` (D-094).
 
 ```mermaid
 stateDiagram-v2
@@ -24,7 +24,7 @@ stateDiagram-v2
     approved --> queued: planner wrote send jobs
     approved --> completed: planner found no recipient or a bad rule
     queued --> sending: first claim of a send job
-    queued --> completed: allowed, no code path
+    queued --> completed: fallback only, no code path
     sending --> completed: recovery found no open send job
     completed --> sending: POST /retry
 ```
@@ -52,7 +52,7 @@ Other rules:
 
 **State:** `send_jobs.status`, `attempts`, `next_attempt_at`, `retryable` and `enqueued_at` in Postgres.
 
-**Guard:** implicit. No trigger checks the transitions. Each `UPDATE` has a `WHERE status = ...` condition, and that condition is the only guard. The comment in `types.go` names the terminal states: `sent`, `failed`, `unknown` and `skipped`.
+**Guard:** explicit since D-091. Each `UPDATE` has a `WHERE status = ...` condition. The trigger `send_jobs_status_moves` in `00005_send_job_transitions.sql` is the second guard. It allows only the moves in the diagram. The comment in `types.go` names the terminal states: `sent`, `failed`, `unknown` and `skipped`.
 
 ```mermaid
 stateDiagram-v2
@@ -78,7 +78,7 @@ stateDiagram-v2
 | (none) | `queued` | `PlanNext` | One row for each reachable user and channel. The unique key `(campaign_id, user_id, channel)` blocks a second row. |
 | `queued` | `sending` | `Claim` | Always. `attempts` goes up by 1. |
 | `retrying` | `sending` | `Claim` | `next_attempt_at <= now`. `attempts` goes up by 1. |
-| `sending` | `queued` | `Release` | Nothing was sent. The causes are a cancelled context, a `Load` error, or a rate token older than 100 ms. `attempts` goes down by 1. |
+| `sending` | `queued` | `Release` | Nothing was sent. The causes are a cancelled context, a `Load` error, a rate token older than 100 ms, a cancelled `Admit`, or a failed write of a skip result (D-092). `attempts` goes down by 1. |
 | `sending` | `skipped` | `Consumer.Handle` and `Finish` | `Load` returned `no_consent`, `no_contact` or `over_limit`. |
 | `sending` | result of `Next` | `Consumer.Handle` and `Finish` | See the table below. |
 | `sending` | `unknown` | `ExpireSending` | `updated_at` is older than `SEND_TIMEOUT` plus 30 s. |
@@ -119,6 +119,7 @@ stateDiagram-v2
 - `Handle` acknowledges the entry when `Claimable` or `Claim` finds no job to take. Thus a duplicate entry, or an entry for a job in a terminal state, uses no rate token.
 - `Handle` keeps the entry pending when an error occurs. Examples are a cancelled wait, a `Claim` error, a `Load` error, and a `Finish` error.
 - After a `Finish` error, the job stays in `sending`. A new claim fails. Thus the entry is acknowledged at the next delivery, and `ExpireSending` later sets the job to `unknown`.
+- A skip result is the exception. After a failed write, the consumer releases the job to `queued`. The next delivery skips it again (D-092).
 
 ## 4. Consumer step for one entry
 
@@ -134,14 +135,17 @@ stateDiagram-v2
     claim --> load
     load --> finish_skipped: skip reason
     load --> wait: prep took more than 100 ms, Release
-    load --> send
+    load --> admit
+    admit --> send: gap since the last request start
+    admit --> released: context cancelled, Release
     send --> finish
     finish_skipped --> ack
     finish --> ack
     ack --> [*]
+    released --> [*]: entry stays pending
 ```
 
-D-086 gives the order: wait, claim, load, send. The job stays `queued` during the wait. Thus recovery cannot expire a job that waits for a token.
+D-086 gives the order: wait, claim, load, send. The job stays `queued` during the wait. Thus recovery cannot expire a job that waits for a token. D-090 adds `Admit` between the load and the send. It keeps the request starts of one channel apart.
 
 ## 5. Channel rate limiter
 
@@ -151,6 +155,7 @@ D-086 gives the order: wait, claim, load, send. The job stays `queued` during th
 - **paused:** `now < pausedUntil`. `Wait` sleeps until the pause ends.
 - `Pause(Retry-After)` moves the limiter to paused after a `429`. A shorter pause does not shorten a longer one.
 - `Wait` checks the pause again after it gets a token. Thus a pause that starts during the sleep also applies.
+- `Admit` is a second gate before each request. It keeps the request starts at least `1s/perSec` plus 2% apart (D-090).
 
 ## 6. Retry push memory
 
@@ -170,10 +175,10 @@ The map is local to one worker process. Two workers can push the same job. The c
 ```mermaid
 stateDiagram-v2
     [*] --> streaming: attempt 1
-    streaming --> streaming: Reset event, buffer cleared, "retry" sent
+    streaming --> streaming: Reset event, buffer cleared, "retry" with reason restart
     streaming --> validating: tool call complete
     validating --> final: valid
-    validating --> streaming: invalid on attempt 1, "retry" with errors, attempt 2
+    validating --> streaming: invalid on attempt 1, "retry" with reason invalid, attempt 2
     validating --> error: invalid on attempt 2
     streaming --> error: LLM error, timeout or refusal
     streaming --> cancelled: client disconnected
@@ -195,9 +200,10 @@ The frontend card in `content-cards.vue` follows the same events:
 
 | Card state | Fields | Event that sets it |
 |---|---|---|
-| waiting | no `draft`, no `final`, `retrying = false` | `audience` |
-| drafting | `draft` set | `draft` |
-| retrying | `draft` cleared, `retrying = true` | `retry` |
+| waiting | no `draft`, no `final`, no `retry` | `audience` |
+| drafting | `draft` set, `retry` cleared | `draft` |
+| restarting | `draft` cleared, `retry = 'restart'`, "Starting again…" | `retry` with `reason: "restart"` |
+| repairing | `draft` cleared, `retry = 'invalid'`, "Fixing content…" | `retry` with `reason: "invalid"`, or with no reason |
 | final | `final` set | `final` |
 | error | `error` set | `error` with a language |
 | closed | `closed = true` | the stream closed early before `final` or `error` |
@@ -263,15 +269,15 @@ stateDiagram-v2
 ```
 
 - The page does not go back from polling to streaming. It polls every 2 s until the status is `completed`.
-- `currentStep` maps the campaign status to the step of the sending window: `queued`, `sending`, `done`. All other statuses map to `approved`, `draft` also.
+- `currentStep` maps the campaign status to the step of the sending window. It takes a `SendableStatus`, which has no `draft`. It has one case for each status and no `default` case (D-094).
 
 ## Gaps
 
-These are notes, not defects that we confirmed. Each one needs a decision by the user.
+We found these gaps on 2026-11-11. The list gives the change that closed each one.
 
-1. **The send job status has no guard in the database.** The campaign status has a trigger. The send job status has only the `WHERE` conditions of each `UPDATE`. A new code path can write any status, also from a terminal state. A trigger like `campaigns_frozen_after_approval` can close this gap. It adds a cost to each write on a hot table.
-2. **`queued → completed` has no code path.** The trigger allows it. `Claim` moves the campaign to `sending` in the same transaction as the first claim. Thus a `queued` campaign has no claimed job, and all its jobs are still open. The transition is not harmful, but the trigger allows more than the code does.
-3. **A `Finish` error gives `unknown`, also when nothing was sent.** If the write of a skip result fails, the job stays in `sending`. `ExpireSending` then sets `unknown`. The result is safe, because the worker never sends twice. But the reports count a skip as an unknown result.
-4. **The `retry` event has two meanings.** A `Reset` of the LLM stream sends `retry` with no errors. A failed validation sends `retry` with errors. Only the second one uses the repair round. The card shows both in the same way.
-5. **`currentStep` maps `draft` to `approved`.** The sending window opens only after an approval, so the user does not see this. A new caller can see a wrong step.
-6. **Two state names have the same text.** `queued` and `sending` are statuses of a campaign and of a send job. `retrying` is a send job status, and `retry` is a content stream event. Code that reads a status must know the type of the row.
+1. **The send job status had no guard in the database.** Fixed by D-091. The trigger `send_jobs_status_moves` allows only the moves of section 2. The test fixtures use `setJobs`, which moves each job through `sending`.
+2. **`queued → completed` has no code path.** Kept by D-091. `Claim` moves the campaign to `sending` in the same transaction as the first claim. The trigger still allows the move as a fallback for `CompleteCampaigns`. Without it, a campaign could stay in `queued` for ever. A comment in `00005_send_job_transitions.sql` records this.
+3. **A `Finish` error gave `unknown`, also when nothing was sent.** Fixed by D-092 for skips. Other results keep the old behaviour, because a release would lose the backoff or could send a message two times.
+4. **The `retry` event had two meanings.** Fixed by D-093. The event has `reason`, and the card shows a different text for each reason.
+5. **`currentStep` mapped `draft` to `approved`.** Fixed by D-094. The type of the parameter has no `draft`, and the switch has no `default` case.
+6. **Two state names have the same text.** Reduced by D-094. Go code uses `campaign.Status` constants for the campaign and `delivery.Status` for the send job. The frontend has `CampaignStatus`, `SendableStatus` and `DeliveryStatus`. The values in the database and the API do not change.

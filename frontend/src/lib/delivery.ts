@@ -1,4 +1,4 @@
-import type { CampaignStatus } from '@/lib/campaigns'
+import type { SendableStatus } from '@/lib/campaigns'
 
 import { API_BASE_URL } from '@/constants/app-config'
 import { apiFetch } from '@/lib/api-client'
@@ -7,7 +7,7 @@ import { CampaignRequestError } from '@/lib/campaigns'
 export type DeliveryStatus = 'queued' | 'sending' | 'retrying' | 'sent' | 'failed' | 'unknown' | 'skipped'
 export type DeliveryChannel = 'sms' | 'email'
 export interface ChannelProgress { total: number, queued: number, sending: number, retrying: number, sent: number, failed: number, unknown: number, skipped: number, retryable_failed: number }
-export interface Progress { campaign_id: number, status: CampaignStatus, channels: { sms: ChannelProgress, email: ChannelProgress } }
+export interface Progress { campaign_id: number, status: SendableStatus, channels: { sms: ChannelProgress, email: ChannelProgress } }
 export interface SendJob { id: number, user_id: number, channel: DeliveryChannel, language: string, status: DeliveryStatus, attempts: number, last_error: string, updated_at: string }
 export interface SendJobQuery { status?: DeliveryStatus, channel?: DeliveryChannel, after?: number, limit?: number }
 export type Step = 'approved' | 'queued' | 'sending' | 'done'
@@ -52,12 +52,13 @@ export function retryCampaign(id: number): Promise<{ retried: number, progress: 
   return call(() => apiFetch<{ retried: number, progress: Progress }>(`/campaigns/${id}/retry`, { method: 'POST' }))
 }
 
-export function currentStep(status: CampaignStatus): Step {
+// No default case: a new status must get a step here, or the build fails.
+export function currentStep(status: SendableStatus): Step {
   switch (status) {
+    case 'approved': return 'approved'
     case 'queued': return 'queued'
     case 'sending': return 'sending'
     case 'completed': return 'done'
-    default: return 'approved'
   }
 }
 

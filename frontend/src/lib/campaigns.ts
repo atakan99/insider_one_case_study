@@ -3,6 +3,8 @@ import type { Content } from '@/lib/content'
 import { apiFetch } from '@/lib/api-client'
 
 export type CampaignStatus = 'draft' | 'approved' | 'queued' | 'sending' | 'completed'
+// SendableStatus is a campaign status after approval. The progress API never returns a draft.
+export type SendableStatus = Exclude<CampaignStatus, 'draft'>
 export interface LanguageContent extends Content { language: string, sms_count: number, email_count: number, first_name_runes: number }
 export interface Campaign {
   id: number

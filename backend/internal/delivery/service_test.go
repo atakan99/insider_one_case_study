@@ -29,11 +29,9 @@ func newService(t *testing.T, s *Store, closeRedis bool) (*Service, *Queue) {
 func failedCampaign(t *testing.T, ctx context.Context, pool *pgxpool.Pool, s *Store) (int64, map[Channel][]int64) {
 	t.Helper()
 	cid, ids := planned(t, ctx, pool, s)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, cid)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed', retryable = true, attempts = 5, last_error = 'x'
-WHERE id = ANY($1)`, ids[ChannelSMS][:3])
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed', retryable = true, attempts = 5, last_error = 'x'
-WHERE id = ANY($1)`, ids[ChannelEmail][:2])
+	failed := append(append([]int64{}, ids[ChannelSMS][:3]...), ids[ChannelEmail][:2]...)
+	setJobs(t, ctx, pool, failed, StatusFailed, ", retryable = true, attempts = 5, last_error = 'x'")
+	setJobs(t, ctx, pool, openJobs(t, ctx, pool, cid), StatusSent, "")
 	exec(t, ctx, pool, `UPDATE campaigns SET status = 'completed' WHERE id = $1`, cid)
 	return cid, map[Channel][]int64{ChannelSMS: ids[ChannelSMS][:3], ChannelEmail: ids[ChannelEmail][:2]}
 }

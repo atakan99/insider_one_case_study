@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/content"
 	"campaigncomposer/internal/segment"
 )
@@ -66,7 +67,7 @@ ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&campaignID, &raw)
 		if len(ferrs) > 0 {
 			slog.Default().Error("send planner: stored rule is not valid, campaign completed with no jobs",
 				"campaign_id", campaignID, "error", ferrs[0].Error())
-			return setCampaign(ctx, tx, campaignID, "completed", now)
+			return setCampaign(ctx, tx, campaignID, campaign.StatusCompleted, now)
 		}
 		where := allow.Compile(rule, now)
 
@@ -122,9 +123,9 @@ ON CONFLICT DO NOTHING RETURNING id`, n+1, string(ch), n+2, n+2, q)
 			}
 		}
 		if total == 0 {
-			return setCampaign(ctx, tx, campaignID, "completed", now)
+			return setCampaign(ctx, tx, campaignID, campaign.StatusCompleted, now)
 		}
-		return setCampaign(ctx, tx, campaignID, "queued", now)
+		return setCampaign(ctx, tx, campaignID, campaign.StatusQueued, now)
 	})
 	if err != nil {
 		return 0, map[Channel][]int64{}, false, fmt.Errorf("plan next campaign: %w", err)
@@ -132,7 +133,7 @@ ON CONFLICT DO NOTHING RETURNING id`, n+1, string(ch), n+2, n+2, q)
 	return campaignID, ids, ok, nil
 }
 
-func setCampaign(ctx context.Context, tx pgx.Tx, id int64, status string, now time.Time) error {
+func setCampaign(ctx context.Context, tx pgx.Tx, id int64, status campaign.Status, now time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE campaigns SET status = $2, updated_at = $3 WHERE id = $1`, id, status, now)
 	return err
 }
@@ -397,7 +398,7 @@ func (s *Store) Progress(ctx context.Context, campaignID int64) (Progress, error
 			}
 			return e
 		}
-		if p.Status == "draft" {
+		if p.Status == campaign.StatusDraft {
 			return ErrNotSendable
 		}
 		rs, e := tx.Query(ctx, `SELECT channel, status, count(*) FROM send_jobs WHERE campaign_id = $1 GROUP BY channel, status`, campaignID)
@@ -508,14 +509,14 @@ ORDER BY id LIMIT $5`, campaignID, f.After, string(f.Status), string(f.Channel),
 func (s *Store) Retry(ctx context.Context, campaignID int64, now time.Time) (map[Channel][]int64, error) {
 	var out map[Channel][]int64
 	err := s.inTx(ctx, pgx.ReadWrite, func(tx pgx.Tx) error {
-		var status string
+		var status campaign.Status
 		if e := tx.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1 FOR UPDATE`, campaignID).Scan(&status); e != nil {
 			if errors.Is(e, pgx.ErrNoRows) {
 				return ErrNotFound
 			}
 			return e
 		}
-		if status != "completed" {
+		if status != campaign.StatusCompleted {
 			return ErrNotCompleted
 		}
 		rs, e := tx.Query(ctx, `UPDATE send_jobs SET status = 'queued', attempts = 0, next_attempt_at = NULL,
@@ -531,7 +532,7 @@ WHERE campaign_id = $1 AND status = 'failed' AND retryable RETURNING id, channel
 		if len(out) == 0 {
 			return ErrNothingToRetry
 		}
-		return setCampaign(ctx, tx, campaignID, "sending", now)
+		return setCampaign(ctx, tx, campaignID, campaign.StatusSending, now)
 	})
 	switch {
 	case err == nil:

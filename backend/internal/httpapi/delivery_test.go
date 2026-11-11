@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/delivery"
 )
 
@@ -55,7 +56,7 @@ func (f *fakeDelivery) Retry(_ context.Context, id int64) (int, delivery.Progres
 	return f.retried, f.progress[0], nil
 }
 
-func prog(status string, sent int64) delivery.Progress {
+func prog(status campaign.Status, sent int64) delivery.Progress {
 	return delivery.Progress{CampaignID: 7, Status: status, Channels: map[delivery.Channel]delivery.ChannelProgress{
 		delivery.ChannelSMS:   {Total: 10, Sent: sent, Queued: 10 - sent},
 		delivery.ChannelEmail: {Total: 4, Failed: 1, RetryableFailed: 1},

@@ -53,10 +53,19 @@ type draftEvent struct {
 	Content  content.Content `json:"content"`
 }
 
+// retryEvent tells the browser that the text of a language starts again.
+// Reason is "restart" after a fallback block in the stream (not the repair
+// round, no errors) or "invalid" before the repair round (with errors).
 type retryEvent struct {
 	Language string               `json:"language"`
+	Reason   string               `json:"reason"`
 	Errors   []content.FieldError `json:"errors,omitempty"`
 }
+
+const (
+	retryRestart = "restart"
+	retryInvalid = "invalid"
+)
 
 type finalEvent struct {
 	Language string          `json:"language"`
@@ -285,7 +294,7 @@ func (g *ContentGenerator) runLanguage(ctx context.Context, sse *sseWriter, lang
 			return nil
 		}
 		slog.InfoContext(ctx, "content generate: validation failed", "language", code, "attempts", attempts, "errors", errs)
-		_ = sse.send("retry", retryEvent{Language: code, Errors: errs})
+		_ = sse.send("retry", retryEvent{Language: code, Reason: retryInvalid, Errors: errs})
 
 		// A tool input that is not a JSON object is replayed as {} by the
 		// client, and the replayed turn has no tool_use other than ToolUse, so
@@ -347,7 +356,7 @@ func (d *drafter) on(ev llm.StreamEvent) {
 		// A fallback block started; the text so far is not valid. This is
 		// not the repair round.
 		d.start()
-		_ = d.sse.send("retry", retryEvent{Language: d.lang})
+		_ = d.sse.send("retry", retryEvent{Language: d.lang, Reason: retryRestart})
 		return
 	}
 	if ev.Delta == "" {

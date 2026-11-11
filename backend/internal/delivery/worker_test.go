@@ -465,10 +465,10 @@ func TestWorker_RetryPollerOnTime(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("PlanNext = %v, %v", ok, err)
 	}
-	exec(t, e.ctx, e.pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, e.cid)
 	id := ids[ChannelSMS][0]
 	due := time.Now().Add(300 * time.Millisecond)
-	exec(t, e.ctx, e.pool, `UPDATE send_jobs SET status = 'retrying', attempts = 1, next_attempt_at = $2 WHERE id = $1`, id, due)
+	setJobs(t, e.ctx, e.pool, []int64{id}, StatusRetrying, `, attempts = 1, next_attempt_at = $2`, due)
+	setJobs(t, e.ctx, e.pool, openJobs(t, e.ctx, e.pool, e.cid, id), StatusSent, "")
 	w := e.worker(100, 2, time.Second)
 	w.RetryEvery = 100 * time.Millisecond
 	w.RecoverEvery = time.Hour // only the retry poller can push it
@@ -496,9 +496,9 @@ func TestWorker_RetryPollerNoRepeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec(t, e.ctx, e.pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, e.cid)
 	id := ids[ChannelSMS][0]
-	exec(t, e.ctx, e.pool, `UPDATE send_jobs SET status = 'retrying', attempts = 1, next_attempt_at = now() WHERE id = $1`, id)
+	setJobs(t, e.ctx, e.pool, []int64{id}, StatusRetrying, ", attempts = 1, next_attempt_at = now()")
+	setJobs(t, e.ctx, e.pool, openJobs(t, e.ctx, e.pool, e.cid, id), StatusSent, "")
 	// A queue with no consumer: the entry stays on the stream.
 	w := e.worker(100, 1, time.Second)
 	w.RetryEvery = 20 * time.Millisecond

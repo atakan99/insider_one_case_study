@@ -152,6 +152,7 @@ type langData struct {
 	Content  content.Content      `json:"content"`
 	Limits   content.Limits       `json:"limits"`
 	Errors   []content.FieldError `json:"errors"`
+	Reason   string               `json:"reason"`
 	Code     string               `json:"code"`
 	Message  string               `json:"message"`
 	Details  []content.FieldError `json:"details"`
@@ -518,6 +519,9 @@ func TestGenerate_Repair(t *testing.T) {
 		if !found {
 			t.Errorf("retry errors %+v", retry.Errors)
 		}
+		if retry.Reason != "invalid" {
+			t.Errorf("retry reason %q, want invalid", retry.Reason)
+		}
 		if len(reqs) != 2 || reqs[1].Turns[2].ToolResult == nil || !reqs[1].Turns[2].ToolResult.IsError {
 			t.Errorf("repair turns %+v", reqs[len(reqs)-1].Turns)
 		}
@@ -656,11 +660,11 @@ func TestGenerate_Reset(t *testing.T) {
 			retries = append(retries, e)
 		}
 	}
-	if d := dataOf(t, retries[0]); len(d.Errors) != 0 {
-		t.Errorf("reset retry has errors: %s", retries[0].Data)
+	if d := dataOf(t, retries[0]); len(d.Errors) != 0 || d.Reason != "restart" {
+		t.Errorf("reset retry: want reason restart and no errors, got %s", retries[0].Data)
 	}
-	if d := dataOf(t, retries[1]); len(d.Errors) == 0 {
-		t.Errorf("repair retry has no errors: %s", retries[1].Data)
+	if d := dataOf(t, retries[1]); len(d.Errors) == 0 || d.Reason != "invalid" {
+		t.Errorf("repair retry: want reason invalid with errors, got %s", retries[1].Data)
 	}
 	afterReset := false
 	for _, e := range tr {

@@ -10,12 +10,20 @@ import (
 	"campaigncomposer/internal/content"
 )
 
-// Status is the state of a campaign.
+// Status is the state of a campaign. The campaign package writes draft and
+// approved. The delivery package writes queued, sending and completed. The
+// trigger campaigns_frozen_after_approval allows only the moves of
+// docs/state-machines.md.
 type Status string
 
+// Campaign statuses. The delivery package has a Status type of its own for
+// send jobs, with some of the same words.
 const (
-	StatusDraft    Status = "draft"
-	StatusApproved Status = "approved"
+	StatusDraft     Status = "draft"
+	StatusApproved  Status = "approved"
+	StatusQueued    Status = "queued"
+	StatusSending   Status = "sending"
+	StatusCompleted Status = "completed"
 )
 
 // LanguageContent is the copy of one language with the audience snapshot of

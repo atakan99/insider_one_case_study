@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"campaigncomposer/internal/campaign"
 	"campaigncomposer/internal/delivery"
 )
 
@@ -87,7 +88,7 @@ func (h deliveryHandlers) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	finish := func(p delivery.Progress) bool {
-		if p.Status != "completed" {
+		if p.Status != campaign.StatusCompleted {
 			return false
 		}
 		_ = sse.send("done", map[string]any{})

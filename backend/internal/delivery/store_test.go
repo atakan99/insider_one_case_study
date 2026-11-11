@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"campaigncomposer/internal/campaign"
@@ -100,6 +101,32 @@ FROM send_jobs WHERE id = $1`, id).Scan(&j.ID, &j.CampaignID, &j.UserID, &j.Chan
 		t.Fatal(err)
 	}
 	return j
+}
+
+// setJobs moves the jobs ids to status st through sending, as the worker does.
+// The trigger send_jobs_status_moves allows each move out of sending, so a
+// queued or retrying job can reach any status. extra is more of the SET list,
+// with $2 and up for args.
+func setJobs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ids []int64, st Status, extra string, args ...any) {
+	t.Helper()
+	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sending' WHERE id = ANY($1) AND status IN ('queued', 'retrying')`, ids)
+	exec(t, ctx, pool, `UPDATE send_jobs SET status = '`+string(st)+`'`+extra+` WHERE id = ANY($1)`, append([]any{ids}, args...)...)
+}
+
+// openJobs returns the ids of the queued, retrying and sending jobs of
+// campaign cid, without the ids in not.
+func openJobs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cid int64, not ...int64) []int64 {
+	t.Helper()
+	rs, err := pool.Query(ctx, `SELECT id FROM send_jobs WHERE campaign_id = $1
+AND status IN ('queued', 'retrying', 'sending') AND NOT (id = ANY($2)) ORDER BY id`, cid, append([]int64{}, not...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := pgx.CollectRows(rs, pgx.RowTo[int64])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ids
 }
 
 func exec(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) {
@@ -266,7 +293,7 @@ func TestStore_ClaimNotDue(t *testing.T) {
 	ctx, pool, s := seeded(t)
 	_, ids := planned(t, ctx, pool, s)
 	id := ids[ChannelSMS][0]
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'retrying', attempts = 1, next_attempt_at = $2 WHERE id = $1`, id, testNow.Add(time.Minute))
+	setJobs(t, ctx, pool, []int64{id}, StatusRetrying, `, attempts = 1, next_attempt_at = $2`, testNow.Add(time.Minute))
 	if _, ok, err := s.Claim(ctx, id, testNow); err != nil || ok {
 		t.Fatalf("not due: ok=%v err=%v", ok, err)
 	}
@@ -466,8 +493,8 @@ func TestStore_Recovery(t *testing.T) {
 	}
 
 	// Due retries.
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'retrying', attempts = 1, next_attempt_at = $2 WHERE id = $1`, q[3], testNow.Add(-time.Second))
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'retrying', attempts = 1, next_attempt_at = $2 WHERE id = $1`, q[4], testNow.Add(time.Minute))
+	setJobs(t, ctx, pool, []int64{q[3]}, StatusRetrying, `, attempts = 1, next_attempt_at = $2`, testNow.Add(-time.Second))
+	setJobs(t, ctx, pool, []int64{q[4]}, StatusRetrying, `, attempts = 1, next_attempt_at = $2`, testNow.Add(time.Minute))
 	due, err := s.DueRetries(ctx, testNow, 0)
 	if err != nil || len(due[ChannelSMS]) != 1 || due[ChannelSMS][0] != q[3] {
 		t.Fatalf("due = %v %v", due, err)
@@ -495,7 +522,7 @@ func TestStore_Recovery(t *testing.T) {
 	if err != nil || len(done) != 0 {
 		t.Fatalf("early complete %v %v", done, err)
 	}
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, cid)
+	setJobs(t, ctx, pool, openJobs(t, ctx, pool, cid), StatusSent, "")
 	done, err = s.CompleteCampaigns(ctx)
 	if err != nil || len(done) != 1 || done[0] != cid {
 		t.Fatalf("complete %v %v", done, err)
@@ -508,10 +535,10 @@ func TestStore_Recovery(t *testing.T) {
 func TestStore_Progress(t *testing.T) {
 	ctx, pool, s := seeded(t)
 	cid, ids := planned(t, ctx, pool, s)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sent' WHERE id = ANY($1)`, ids[ChannelSMS][:3])
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed', retryable = true WHERE id = ANY($1)`, ids[ChannelSMS][3:5])
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed' WHERE id = $1`, ids[ChannelEmail][0])
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'skipped' WHERE id = $1`, ids[ChannelEmail][1])
+	setJobs(t, ctx, pool, ids[ChannelSMS][:3], StatusSent, "")
+	setJobs(t, ctx, pool, ids[ChannelSMS][3:5], StatusFailed, ", retryable = true")
+	setJobs(t, ctx, pool, ids[ChannelEmail][:1], StatusFailed, "")
+	setJobs(t, ctx, pool, ids[ChannelEmail][1:2], StatusSkipped, "")
 	p, err := s.Progress(ctx, cid)
 	if err != nil {
 		t.Fatal(err)
@@ -572,7 +599,7 @@ func TestStore_Progress(t *testing.T) {
 func TestStore_ListJobs(t *testing.T) {
 	ctx, pool, s := seeded(t)
 	cid, ids := planned(t, ctx, pool, s)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed' WHERE id = ANY($1)`, ids[ChannelSMS][:4])
+	setJobs(t, ctx, pool, ids[ChannelSMS][:4], StatusFailed, "")
 	jobs, next, err := s.ListJobs(ctx, cid, JobFilter{Status: StatusFailed, Channel: ChannelSMS, Limit: 3})
 	if err != nil || len(jobs) != 3 || next == nil || *next != jobs[2].ID {
 		t.Fatalf("page 1: %d %v %v", len(jobs), next, err)
@@ -604,11 +631,11 @@ func TestStore_Retry(t *testing.T) {
 		t.Fatalf("queued campaign: %v", err)
 	}
 	a, b, c := ids[ChannelSMS][0], ids[ChannelSMS][1], ids[ChannelEmail][0]
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, cid)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed', attempts = 3, retryable = true, last_error = '503', enqueued_at = $2 WHERE id = ANY($1)`, []int64{a, c}, testNow)
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'failed', attempts = 1, retryable = false, last_error = '400' WHERE id = $1`, b)
+	setJobs(t, ctx, pool, []int64{a, c}, StatusFailed, `, attempts = 3, retryable = true, last_error = '503', enqueued_at = $2`, testNow)
+	setJobs(t, ctx, pool, []int64{b}, StatusFailed, `, attempts = 1, retryable = false, last_error = '400'`)
 	d := ids[ChannelEmail][1]
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'unknown', attempts = 1 WHERE id = $1`, d)
+	setJobs(t, ctx, pool, []int64{d}, StatusUnknown, ", attempts = 1")
+	setJobs(t, ctx, pool, openJobs(t, ctx, pool, cid), StatusSent, "")
 	exec(t, ctx, pool, `UPDATE campaigns SET status = 'completed' WHERE id = $1`, cid)
 
 	var wg sync.WaitGroup
@@ -655,7 +682,7 @@ func TestStore_Retry(t *testing.T) {
 	}
 
 	// Nothing to retry.
-	exec(t, ctx, pool, `UPDATE send_jobs SET status = 'sent' WHERE campaign_id = $1`, cid)
+	setJobs(t, ctx, pool, openJobs(t, ctx, pool, cid), StatusSent, "")
 	exec(t, ctx, pool, `UPDATE campaigns SET status = 'completed' WHERE id = $1`, cid)
 	if _, err := s.Retry(ctx, cid, testNow); !errors.Is(err, ErrNothingToRetry) {
 		t.Fatalf("nothing: %v", err)

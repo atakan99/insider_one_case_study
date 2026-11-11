@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -204,5 +205,65 @@ VALUES ($1, $2, $3, 'tr', 'queued', now(), now())`
 	}
 	if _, err := conn.Exec(ctx, ins, id, uid, "email"); err != nil {
 		t.Errorf("other channel: %v", err)
+	}
+}
+
+// newJob inserts a send job with the given status. Insert does not fire the
+// update trigger, so any status can be the start of a move.
+func newJob(t *testing.T, ctx context.Context, conn *pgx.Conn, cid int64, email, status string, retryable bool) int64 {
+	t.Helper()
+	var uid, id int64
+	if err := conn.QueryRow(ctx, insertUser+` RETURNING id`, email, "tr", "TR").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(ctx, `INSERT INTO send_jobs (campaign_id, user_id, channel, language, status, retryable, created_at, updated_at)
+VALUES ($1, $2, 'sms', 'tr', $3, $4, now(), now()) RETURNING id`, cid, uid, status, retryable).Scan(&id); err != nil {
+		t.Fatalf("insert job %s: %v", status, err)
+	}
+	return id
+}
+
+func TestMigrate_SendJobStatusMoves(t *testing.T) {
+	ctx, conn := migrated(t)
+	cid := newCampaign(t, ctx, conn, "sending")
+	n := 0
+	job := func(status string, retryable bool) int64 {
+		n++
+		return newJob(t, ctx, conn, cid, fmt.Sprintf("j%d@example.com", n), status, retryable)
+	}
+	allowed := [][2]string{
+		{"queued", "sending"}, {"retrying", "sending"},
+		{"sending", "queued"}, {"sending", "sent"}, {"sending", "retrying"}, {"sending", "failed"},
+		{"sending", "unknown"}, {"sending", "skipped"},
+	}
+	for _, m := range allowed {
+		id := job(m[0], false)
+		if _, err := conn.Exec(ctx, `UPDATE send_jobs SET status = $2 WHERE id = $1`, id, m[1]); err != nil {
+			t.Errorf("%s -> %s: want ok, got %v", m[0], m[1], err)
+		}
+	}
+	retry := job("failed", true)
+	if _, err := conn.Exec(ctx, `UPDATE send_jobs SET status = 'queued', retryable = false WHERE id = $1`, retry); err != nil {
+		t.Errorf("retryable failed -> queued: want ok, got %v", err)
+	}
+	denied := [][2]string{
+		{"queued", "sent"}, {"queued", "failed"}, {"queued", "retrying"}, {"retrying", "queued"},
+		{"sent", "queued"}, {"sent", "sending"}, {"sent", "retrying"}, {"unknown", "queued"},
+		{"unknown", "sending"}, {"skipped", "queued"}, {"failed", "sending"},
+	}
+	for _, m := range denied {
+		id := job(m[0], false)
+		if _, err := conn.Exec(ctx, `UPDATE send_jobs SET status = $2 WHERE id = $1`, id, m[1]); err == nil {
+			t.Errorf("%s -> %s: want error, got nil", m[0], m[1])
+		}
+	}
+	permanent := job("failed", false)
+	if _, err := conn.Exec(ctx, `UPDATE send_jobs SET status = 'queued' WHERE id = $1`, permanent); err == nil {
+		t.Error("failed with retryable = false -> queued: want error, got nil")
+	}
+	// A write that keeps the status is not a move.
+	sent := job("sent", false)
+	if _, err := conn.Exec(ctx, `UPDATE send_jobs SET enqueued_at = now() WHERE id = $1`, sent); err != nil {
+		t.Errorf("same status: want ok, got %v", err)
 	}
 }

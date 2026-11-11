@@ -651,3 +651,38 @@ Claude writes this log. It records the implementation choices that Claude made o
   - The maximum rate is approximately 98 per second for each channel.
   - The consent read can be older than the request by the `Admit` wait. This wait is normally less than `MaxPrep`.
   - The gate is in memory. Two worker processes would each send at the full rate.
+
+## D-091 A trigger guards the send job status
+
+- **Context:** The campaign status had a trigger (D-040). The send job status had only the `WHERE` condition of each `UPDATE`. A new code path could write any status, also from `sent`. `docs/state-machines.md` lists the moves.
+- **Options:**
+  - Keep the `WHERE` conditions as the only guard.
+  - Add a trigger only for moves out of the terminal states.
+  - Add a trigger with the full list of moves.
+- **Choice:** Migration `00005` adds `send_jobs_status_moves`. It runs `BEFORE UPDATE OF status` and only when the status changes. It allows `queued` or `retrying` to `sending`, `sending` to each other status, and `failed` to `queued` when `retryable` is true. The insert is not guarded.
+- **Why:** The worker must never send a message two times. A move out of `sent` or `unknown` would break this rule. The full list also blocks a `sent` without a request. The `WHEN` clause keeps the cost low, because the writes to `enqueued_at` do not run the function.
+- **Limits:**
+  - The test fixtures cannot jump between states. The helper `setJobs` moves each job through `sending`, as the worker does.
+  - The trigger still allows `queued → completed` for a campaign. No code path makes this move. It stays as a fallback for `CompleteCampaigns`, because a campaign that stays in `queued` for ever is worse.
+
+## D-092 A skip that cannot be written goes back to queued
+
+- **Context:** When the write of a result fails, the job stays in `sending`. Recovery then sets it to `unknown`. For a skip, nothing was sent, so `unknown` was wrong in the reports.
+- **Options:** Release all results that did not deliver. Release only skips.
+- **Choice:** `Consumer.finish` calls `Release` after a failed write of a skip result. The entry stays unacknowledged. The next delivery loads the job again and skips it again.
+- **Why:** A skip sends nothing, so a second attempt is safe. A release after `retrying` would lose the backoff and `Retry-After`. After `sent` or `unknown`, the provider possibly got the message.
+- **Limits:** If the database is down, `Release` also fails. The job then becomes `unknown`, as before.
+
+## D-093 The retry event has a reason
+
+- **Context:** The content stream sent `retry` for two causes. A `fallback` block restarts the text and is not the repair round. A failed check starts the repair round. The card showed "Fixing content…" for both.
+- **Choice:** `retry` has `reason`. The value is `restart` after a `fallback` block and `invalid` before the repair round. The card shows "Starting again…" for `restart` and "Fixing content…" for `invalid`. An event with no `reason` counts as `invalid`.
+- **Why:** The marketer sees the true cause. The browser no longer has to guess the cause from an empty `errors` list.
+
+## D-094 Status types in code
+
+- **Context:** `queued` and `sending` are statuses of a campaign and of a send job. The delivery package wrote campaign statuses as plain strings. The frontend `currentStep` mapped `draft` to `approved` in a `default` case.
+- **Choice:**
+  - `campaign.Status` has constants for all five values. `delivery.Store` and `Progress.Status` use them.
+  - The frontend has `SendableStatus`, the campaign status without `draft`. `Progress.status` and `currentStep` use it. `currentStep` has no `default` case.
+- **Why:** The Go compiler now rejects a send job status where a campaign status is expected. TypeScript rejects a new status that has no step. The values in the database and the API do not change.

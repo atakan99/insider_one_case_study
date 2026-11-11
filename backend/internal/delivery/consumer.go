@@ -140,7 +140,9 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 
 // finish writes the result and acknowledges the entry. When the write fails,
 // the entry stays unacknowledged. Its job stays in sending, and a new claim
-// fails, so the message is not sent again.
+// fails, so the message is not sent again. A skip is the exception: nothing
+// was sent, so the job goes back to queued and the next delivery of the entry
+// skips it again. Without this, the recovery would set it to unknown.
 func (c *Consumer) finish(ctx context.Context, e Entry, job Job, r Result) error {
 	var err error
 	if c.finishErr != nil {
@@ -151,6 +153,11 @@ func (c *Consumer) finish(ctx context.Context, e Entry, job Job, r Result) error
 	}
 	if err != nil {
 		c.log().Error("write send result", "job_id", job.ID, "channel", c.Channel, "attempt", job.Attempts, "error", err)
+		if r.Status == StatusSkipped {
+			if rerr := c.Store.Release(ctx, job.ID); rerr != nil {
+				c.log().Error("release skipped job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
+			}
+		}
 		return err
 	}
 	c.Metrics.Result(c.Channel, r.Status)

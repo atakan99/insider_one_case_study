@@ -140,3 +140,16 @@ Append one entry per session. Use the template below. Put the newest entry at th
   - A click on a draft row in the list opens the review window, and other rows open the campaign page.
   - The list has no recipient count, because the API does not return one.
   - The dashboard and the list still show "Loading…" text or nothing during the first load.
+
+## 2026-11-11 — state machines
+- Done: `docs/state-machines.md` lists 10 state machines in the code, and the gaps that we found. We fixed five gaps and kept one on purpose.
+  - The trigger `send_jobs_status_moves` (migration `00005`) allows only the moves of the worker (D-091). The test fixtures use `setJobs` and move each job through `sending`.
+  - A skip result that cannot be written goes back to `queued`, not to `unknown` (D-092).
+  - The `retry` event of the content stream has `reason`: `restart` or `invalid`. The card shows "Starting again…" or "Fixing content…" (D-093).
+  - `campaign.Status` has constants for all five values. `delivery` uses them. The frontend has `SendableStatus`, and `currentStep` has no `default` case (D-094).
+  - The campaign trigger still allows `queued → completed` as a fallback. No code path makes this move (D-091).
+- Verified with: each fix had a test that failed first. `TestConsumer_SkipWriteFailsReleases` showed `sending` before the fix. `TestMigrate_SendJobStatusMoves` showed 12 moves that the database accepted. The backend and frontend tests of the retry reason failed first. `vue-tsc -b` passes. `make verify` exit 0 (235 frontend tests).
+- Next: user review of the changes. Nothing is committed.
+- Open questions:
+  - The insert of a send job has no status guard. Only `PlanNext` inserts.
+  - No compose run checked the new migration against a database with existing data. The trigger runs only on an update, so existing rows are not checked.

@@ -194,7 +194,7 @@ On success, the response has status `200` and `Content-Type: text/event-stream`.
 |---|---|---|
 | `audience` | `{"description": "...", "languages": [...]}`. Each entry is the slice 04 language entry, with all its counts. | One time, first. The languages in the sequence of slice 04. |
 | `draft` | `{"language": "tr", "content": {"sms": "...", "email_subject": "...", "email_body": "..."}}` | While a call streams. `content` is the partial object so far. A field that has not started is `""`. |
-| `retry` | `{"language": "tr", "errors": [...]}` | Before the repair call. |
+| `retry` | `{"language": "tr", "reason": "invalid", "errors": [...]}` | `reason` is `invalid` before the repair call, with the errors. It is `restart` after a `fallback` block, with no errors (D-093). |
 | `final` | `{"language": "tr", "content": {...}, "limits": {"first_name_runes": 14, "sms_runes": 121, "email_subject_runes": 47, "email_body_runes": 612}}` | The answer passed validation. The rune counts are after rendering with the longest first name. |
 | `error` | `{"language": "tr", "code": "content_invalid", "message": "...", "details": [...]}` | The language failed. The codes are `content_invalid`, `llm_error`, `llm_refused` and `llm_timeout`. |
 | `done` | `{}` | Last. Then the backend closes the stream. |
@@ -218,7 +218,7 @@ On `/campaigns/new`:
 - Each card has three parts: SMS, email subject and email body.
 - While `draft` events arrive, the text shows as a draft. The style shows that it is not final.
 - On `final`, the card shows the final text and a counter for each limited field, for example `121 / 160`. The counter uses the rune count from the event.
-- On `retry`, the card clears the text and shows "Fixing content…".
+- On `retry`, the card clears the text. It shows "Fixing content…" for `reason: "invalid"` and "Starting again…" for `reason: "restart"` (D-093).
 - On `error`, the card shows the message and keeps the other cards.
 - A "Regenerate content" button runs the content request again with the same brief and rule. It is off while a request runs.
 - A new "Find audience" click stops the open content request and clears the cards.

@@ -4,6 +4,8 @@ package delivery
 import (
 	"errors"
 	"time"
+
+	"campaigncomposer/internal/campaign"
 )
 
 // Channel is a delivery channel.
@@ -90,7 +92,7 @@ type ChannelProgress struct {
 // Progress is the delivery state of one campaign. Channels has both keys.
 type Progress struct {
 	CampaignID int64                       `json:"campaign_id"`
-	Status     string                      `json:"status"`
+	Status     campaign.Status             `json:"status"`
 	Channels   map[Channel]ChannelProgress `json:"channels"`
 }
 

@@ -32,11 +32,11 @@ Read `goal.md` first. This file lists the checks that the result must pass.
 - **FR-23.** The user message contains the language, the rule description, the longest first name length and the sanitized brief between `<brief>` and `</brief>`.
 - **FR-24.** The default mock content for `tr` and `en` passes validation with a longest first name of 30 runes.
 - **FR-25.** On `/campaigns/new`, a segment result with one or more languages starts content generation with no second click. The page shows "Generating content…" while the request runs.
-- **FR-26.** The page shows one card for each language. The `draft` text shows as a draft. On `final`, the card shows the final text and a counter for SMS and subject. On `retry`, the card shows "Fixing content…". On `error`, the card shows the message, and the other cards stay.
+- **FR-26.** The page shows one card for each language. The `draft` text shows as a draft. On `final`, the card shows the final text and a counter for SMS and subject. On `retry`, the card shows "Fixing content…", or "Starting again…" when `reason` is `restart` (D-093). On `error`, the card shows the message, and the other cards stay.
 - **FR-27.** "Regenerate content" sends the same brief and rule again. A new "Find audience" click aborts the open content request and clears the cards.
 - **FR-28.** The page shows the content as text, not as HTML. A test with `<b>x</b>` in a `draft` event shows the tags as text.
 - **FR-29.** An error before the stream opens shows its message in the content area. The segment result stays.
-- **FR-30.** A `fallback` block in the stream gives a `retry` event with no errors. The backend uses only the `submit_content` call after it. The language still has its one repair round.
+- **FR-30.** A `fallback` block in the stream gives a `retry` event with `reason: "restart"` and no errors. The backend uses only the `submit_content` call after it. The language still has its one repair round.
 
 ## Non-functional requirements
 

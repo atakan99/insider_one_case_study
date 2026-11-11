@@ -128,6 +128,26 @@ describe('content cards', () => {
     expect(w.find('[data-language="tr"]').text()).toContain('121 / 160')
   })
 
+  it('tells a restart from a repair round', async () => {
+    const r = open()
+    const w = make()
+    r.get()(audience)
+    r.get()({ event: 'draft', data: { language: 'tr', content } })
+    r.get()({ event: 'retry', data: { language: 'tr', reason: 'restart' } })
+    await flushPromises()
+    const tr = w.find('[data-language="tr"]')
+    expect(tr.find('[data-field="sms"]').exists()).toBe(false)
+    expect(tr.text()).toContain('Starting again…')
+    expect(tr.text()).not.toContain('Fixing content…')
+    r.get()({ event: 'retry', data: { language: 'tr', reason: 'invalid', errors: [{ path: 'sms', message: 'too long' }] } })
+    await flushPromises()
+    expect(w.find('[data-language="tr"]').text()).toContain('Fixing content…')
+    expect(w.find('[data-language="tr"]').text()).not.toContain('Starting again…')
+    r.get()({ event: 'draft', data: { language: 'tr', content } })
+    await flushPromises()
+    expect(w.find('[data-language="tr"]').text()).not.toContain('Fixing content…')
+  })
+
   it('clears the draft on retry and shows the next draft', async () => {
     const r = open()
     const w = make()

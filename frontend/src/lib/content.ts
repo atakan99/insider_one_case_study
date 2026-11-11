@@ -5,10 +5,13 @@ import { API_BASE_URL } from '@/constants/app-config'
 
 export interface Content { sms: string, email_subject: string, email_body: string }
 export interface ContentLimits { first_name_runes: number, sms_runes: number, email_subject_runes: number, email_body_runes: number }
+// 'restart': the model began the text again (not the repair round, no errors).
+// 'invalid': the text failed the check, and the repair round starts.
+export type RetryReason = 'restart' | 'invalid'
 export type ContentEvent
   = | { event: 'audience', data: { description: string, languages: (Counts & { code: string })[] } }
     | { event: 'draft', data: { language: string, content: Content } }
-    | { event: 'retry', data: { language: string, errors?: { path: string, message: string }[] } }
+    | { event: 'retry', data: { language: string, reason?: RetryReason, errors?: { path: string, message: string }[] } }
     | { event: 'final', data: { language: string, content: Content, limits: ContentLimits } }
     | { event: 'error', data: { language?: string, code: string, message: string } }
     | { event: 'campaign', data: { id: number, status: CampaignStatus } }

@@ -2,7 +2,7 @@
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import type { Content, ContentEvent, ContentLimits } from '@/lib/content'
+import type { Content, ContentEvent, ContentLimits, RetryReason } from '@/lib/content'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +22,8 @@ interface LangCard {
   sms: number
   draft?: Content
   final?: { content: Content, limits: ContentLimits }
-  retrying: boolean
+  // retry is set from a retry event until the next draft, final or error.
+  retry?: RetryReason
   error?: string
   closed: boolean
 }
@@ -59,7 +60,6 @@ function handle(e: ContentEvent) {
       code: l.code,
       email: l.email,
       sms: l.sms,
-      retrying: false,
       closed: false,
     }))
     return
@@ -82,20 +82,20 @@ function handle(e: ContentEvent) {
     return
   if (e.event === 'draft') {
     card.draft = e.data.content
-    card.retrying = false
+    card.retry = undefined
   }
   else if (e.event === 'retry') {
     card.draft = undefined
-    card.retrying = true
+    card.retry = e.data.reason ?? 'invalid'
   }
   else if (e.event === 'final') {
     card.final = { content: e.data.content, limits: e.data.limits }
-    card.retrying = false
+    card.retry = undefined
     card.error = undefined
   }
   else if (e.event === 'error') {
     card.error = e.data.message
-    card.retrying = false
+    card.retry = undefined
   }
 }
 
@@ -175,8 +175,8 @@ onBeforeUnmount(() => {
             Draft
           </Badge>
         </CardTitle>
-        <p v-if="card.retrying" class="text-sm text-muted-foreground" role="status">
-          Fixing content…
+        <p v-if="card.retry" class="text-sm text-muted-foreground" role="status">
+          {{ card.retry === 'restart' ? 'Starting again…' : 'Fixing content…' }}
         </p>
       </CardHeader>
       <CardContent class="space-y-4">

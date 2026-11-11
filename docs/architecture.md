@@ -80,6 +80,7 @@ ai-sessions/
    - Recovery runs in the worker. It puts old `queued` and due `retrying` send jobs on the stream again. It sets a `sending` send job that hangs to `unknown`. It gives the entry of a dead consumer to a live consumer. It sets a campaign to `completed` when no send job is open (D-056).
    - `POST /api/campaigns/{id}/retry` sets the retryable `failed` send jobs of a `completed` campaign to `queued` with `attempts = 0`. The campaign becomes `sending` (D-059, D-060).
    - `GET /api/campaigns/{id}/progress` and its stream give the counts. `GET /api/campaigns/{id}/send-jobs` gives the list with user ids only (D-061).
+   - `docs/state-machines.md` lists the states and moves of campaigns, send jobs, queue entries and the UI.
 5. **Live status** — The dashboard shows the delivery status.
    - `/` goes to `/dashboard`. The page polls `GET /api/dashboard/stats` and `GET /api/dashboard/health` at once, then every 5 s. It stops while the tab is hidden (D-068, D-069, D-070).
    - `stats` gives the totals, the throughput in 120 buckets of 5 s, the top 8 failure reasons, the mean attempts and a table. The table lists the 20 newest campaigns that are not `draft` (D-071, D-072).
