@@ -114,6 +114,15 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 		release()
 	}
 
+	// The token paces the claims, but a preparation time of up to MaxPrep
+	// can still move sends together. Admit spaces the request starts.
+	if err := c.Limiter.Admit(ctx); err != nil {
+		if rerr := c.Store.Release(done, job.ID); rerr != nil {
+			c.log().Error("release job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
+		}
+		return err
+	}
+
 	reference := fmt.Sprintf("%d:%d:%s", job.CampaignID, job.UserID, job.Channel)
 	// A started request may finish: only HTTP.Timeout bounds it, so a
 	// shutdown does not turn a delivered message into "canceled".

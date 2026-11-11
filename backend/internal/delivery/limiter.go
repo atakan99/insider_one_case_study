@@ -10,17 +10,50 @@ import (
 
 // Limiter limits the sends of one channel to perSec each second, with no
 // burst, and can be paused after a 429.
+//
+// It has two steps. Wait paces the claims. Admit runs just before the
+// request and keeps the request starts at least gap apart, so a slow
+// preparation cannot bunch the sends of tokens that were granted in time.
 type Limiter struct {
 	rl    *rate.Limiter
 	clock Clock
+	gap   time.Duration
 
 	mu          sync.Mutex
 	pausedUntil time.Time
+	nextSend    time.Time
 }
+
+// gapMargin makes the gap between two request starts 2% longer than
+// 1s/perSec. Network jitter then cannot put perSec+1 requests into one
+// second at the provider.
+const gapMargin = 50
 
 // NewLimiter returns a Limiter with a burst of 1.
 func NewLimiter(perSec int, clock Clock) *Limiter {
-	return &Limiter{rl: rate.NewLimiter(rate.Limit(perSec), 1), clock: clock}
+	gap := time.Second / time.Duration(perSec)
+	return &Limiter{
+		rl:    rate.NewLimiter(rate.Limit(perSec), 1),
+		clock: clock,
+		gap:   gap + gap/gapMargin,
+	}
+}
+
+// Admit blocks until gap has passed since the start of the last admitted
+// request. Call it just before the request. A cancelled Admit keeps its slot.
+func (l *Limiter) Admit(ctx context.Context) error {
+	l.mu.Lock()
+	now := l.clock.Now()
+	at := l.nextSend
+	if at.Before(now) {
+		at = now
+	}
+	l.nextSend = at.Add(l.gap)
+	l.mu.Unlock()
+	if d := at.Sub(now); d > 0 {
+		return l.clock.Sleep(ctx, d)
+	}
+	return ctx.Err()
 }
 
 // Pause makes Wait block for at least d from now. A shorter pause does not

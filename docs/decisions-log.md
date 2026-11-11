@@ -637,3 +637,17 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Choice:** `lib/format.ts` has `formatCount` and `formatDateTime`, both in `en-US`. All pages use `languageName`. The channel order is SMS, then email. The dashboard column "Send jobs" is now "Messages". The page content has a `max-w-6xl` limit in the layout.
 - **Why:** The UI is English only (D-022). "Send job" is an internal term that the marketer does not know.
 - **Limits:** A click on a draft row in the campaign list still opens the review window. The tests of slice 06 require this. The list has no recipient count, because `GET /api/campaigns` does not return one.
+
+## D-090 A send gate keeps the request starts apart
+
+- **Context:** D-086 lets a token wait up to 100 ms before its request. A review sent slow and fast preparations together. The provider got 108 requests in one second at a limit of 100.
+- **Options:**
+  - Make `MaxPrep` shorter. This makes the bunch smaller but does not remove it.
+  - Take the token after the load. This brings back the defects that D-086 fixed.
+  - Add a second gate just before the request.
+- **Choice:** `Limiter.Admit` runs after the load and before `Provider.Send`. It keeps the request starts of one channel at least `1s/perSec` plus 2% apart. If the context stops during `Admit`, the consumer releases the send job to `queued`. The token wait and `MaxPrep` stay as in D-086.
+- **Why:** With a minimum gap between request starts, one second cannot hold more than `perSec` requests. The 2% margin covers network jitter between the worker and the provider. The token still paces the claims, so a send job stays `queued` during a long wait.
+- **Limits:**
+  - The maximum rate is approximately 98 per second for each channel.
+  - The consent read can be older than the request by the `Admit` wait. This wait is normally less than `MaxPrep`.
+  - The gate is in memory. Two worker processes would each send at the full rate.
