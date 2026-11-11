@@ -31,25 +31,15 @@ func (c *Consumer) log() *slog.Logger {
 	return slog.Default()
 }
 
-// Handle runs one entry: wait, claim, load, send, write the result, acknowledge.
+// Handle runs one entry: claim, load, wait, send, write the result, acknowledge.
 // It returns an error only when the entry must stay unacknowledged.
 func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	// The writes after a claim use a context that cannot be cancelled: the
 	// result of an attempt must reach Postgres, also during a shutdown.
 	done := context.WithoutCancel(ctx)
 
-	// An entry for a job that cannot be claimed must not use a rate token.
-	// On an error here, the normal path decides.
-	if ok, err := c.Store.Claimable(ctx, e.JobID, c.Clock.Now()); err == nil && !ok {
-		return c.Queue.Ack(done, c.Channel, e.StreamID)
-	}
-
-	waitFrom := c.Clock.Now()
-	err := c.Limiter.Wait(ctx)
-	c.Metrics.Waited(c.Channel, c.Clock.Now().Sub(waitFrom))
-	if err != nil {
-		return err
-	}
+	// The claim comes before the rate token, so an entry for a job that
+	// cannot be claimed uses no token.
 	job, ok, err := c.Store.Claim(ctx, e.JobID, c.Clock.Now())
 	if err != nil {
 		return err
@@ -60,24 +50,34 @@ func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	if c.afterClaim != nil {
 		c.afterClaim()
 	}
-	if err := ctx.Err(); err != nil {
+	// Nothing was sent yet, so the job can go back to the queue.
+	release := func(cause error) error {
 		if rerr := c.Store.Release(done, job.ID); rerr != nil {
 			c.log().Error("release job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
 		}
-		return err
+		return cause
+	}
+	if err := ctx.Err(); err != nil {
+		return release(err)
 	}
 
 	msg, skip, err := c.Store.Load(ctx, job)
 	if err != nil {
-		// Nothing was sent, so the job can go back to the queue.
-		if rerr := c.Store.Release(done, job.ID); rerr != nil {
-			c.log().Error("release job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
-		}
-		return err
+		return release(err)
 	}
 	if skip != "" {
 		c.log().Info("send job skipped", "job_id", job.ID, "channel", c.Channel, "attempt", job.Attempts, "error", skip)
 		return c.finish(done, e, job, Result{Status: StatusSkipped, LastError: skip})
+	}
+
+	// The token wait is the last step before the request. No database work
+	// sits between the two, so a slow query cannot hold permitted sends and
+	// then let them leave together.
+	waitFrom := c.Clock.Now()
+	err = c.Limiter.Wait(ctx)
+	c.Metrics.Waited(c.Channel, c.Clock.Now().Sub(waitFrom))
+	if err != nil {
+		return release(err)
 	}
 
 	reference := fmt.Sprintf("%d:%d:%s", job.CampaignID, job.UserID, job.Channel)

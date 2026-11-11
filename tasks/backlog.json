@@ -361,6 +361,6 @@
       "curl localhost:8080/metrics and curl localhost:8082/metrics return the metrics of goal.md",
       "A headless Chrome run at 1280 px and 360 px shows the five parts in the light theme and the dark theme"
     ],
-    "passes": false
+    "passes": true
   }
 ]

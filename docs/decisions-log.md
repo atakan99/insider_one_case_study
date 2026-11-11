@@ -368,6 +368,8 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 ## D-053 The worker waits for a token before it claims
 
+**Replaced by D-084.**
+
 - **Context:** A consumer can wait a long time for a rate-limit token. A claimed send job would show `sending` while it waits.
 - **Options:** Claim, then wait. Wait, then claim.
 - **Choice:** The consumer waits for a token first, then claims. The limiter checks the `429` pause again after the token wait. On `SIGTERM`, a send job that the worker claimed but did not send goes back to `queued`. Only a crash or a started request gives `unknown`. There is one worker replica, with the limiter in the process. A shared limiter is a non-goal.
@@ -458,6 +460,8 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Why:** One stream avoids two sources that disagree. Polling is simple and the data is the same (FR-40).
 
 ## D-066 Duplicate queue entries use no rate token
+
+**D-084 removed the `Store.Claimable` check. The lag gate of the recovery stays.**
 
 - **Context:** The recovery pushes stale queued jobs again. On a long backlog, an entry waits longer than the stale age. The recovery then adds a second entry for each job. Each duplicate entry used a rate token before `Claim` rejected it. This slowed the real sends and made the backlog bigger on each recovery pass.
 - **Options:** Raise the stale age. Let `Claim` stay the only check. Add a cheap check before the limiter and gate the re-push.
@@ -582,3 +586,17 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Set the option on every client. Set it on the api client and give the worker stream collector its own client.
 - **Choice:** The api client sets `ContextTimeoutEnabled`. The worker main client does not change. The stream collector uses `delivery.Queue` on a second client with a pool of 2 and `ContextTimeoutEnabled`.
 - **Why:** The blocking reads of the worker consumers must keep the timing of slice 07. A second small client bounds the scrape without a change to the consumers.
+
+## D-084 The worker waits for a token immediately before the request
+
+- **Context:** The consumer took a rate token, then claimed and loaded the send job from Postgres (D-053). A slow database held sends that already had a token. When the database answered, these sends left together with the newly permitted sends. The channel could then go above 100 requests per second. A test with 7 held sends showed 7 requests in less than 1 ms.
+- **Options:** Keep the order and add a second limiter before the request. Move the token wait to the last step before the request.
+- **Choice:** The order is claim, load, wait, send. No database work comes between the token and the request. A cancel or an error before the request releases the send job to `queued`. `Store.Claimable` is removed, because the claim now rejects a duplicate entry before the token wait (D-066).
+- **Why:** One limiter at the request is the only place that bounds the real request rate. A second limiter adds state and gives no more safety. The cost is that a send job shows `sending` during its token wait. With 32 consumers at 100 per second, this wait is 320 ms or less. After a crash, the recovery sets these send jobs to `unknown`. This is at most 32 for each channel. A `Retry-After` longer than `SEND_TIMEOUT` plus 30 s can also set a waiting send job to `unknown`. The mock provider sends 1 s.
+
+## D-085 A save keeps the text that the marketer typed during the request
+
+- **Context:** The review window stays editable while a save is in progress. The response replaced all fields. Text that the marketer typed after the submit disappeared, with no message.
+- **Options:** Disable the fields during the save. Keep the fields that changed after the submit.
+- **Choice:** After the response, a field that differs from the submitted value keeps the typed text. All other fields take the saved value. The kept text counts as unsaved, so a close asks before it discards.
+- **Why:** A disabled field drops the focus and stops the marketer for each save. The saved state stays correct, because "unsaved" compares the fields with the response.

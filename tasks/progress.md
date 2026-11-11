@@ -103,3 +103,14 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Next: user review of slice 08. The user sets `08-dashboard-metrics.passes`.
 - Open questions:
   - `XLEN` of the streams does not fall after a send, because the worker does not trim the streams. This is not a defect of slice 08.
+
+## 2026-11-11 — external review fixes
+- Done: three findings of an external review. All three were correct.
+  - The worker now waits for the rate token immediately before the provider request. The order is claim, load, wait, send (D-084, replaces D-053). `Store.Claimable` is removed.
+  - A save in the review window keeps the text that the marketer typed during the request (D-085).
+  - `README.md` describes the limits of the mock LLM and the steps to enable Claude.
+- Verified with: each defect had a test that failed first. `TestConsumer_PacesRequestsAfterDatabaseStall` showed 7 requests in 81 µs at 50 per second before the fix. It passed 10 of 10 runs after the fix. The review window test "keeps the text typed while a save is in progress" failed before the fix. `go test -race ./internal/delivery/...` passes. `make verify` exit 0 (222 frontend tests).
+- Next: user review of the changes. Nothing is committed.
+- Open questions:
+  - A `Retry-After` longer than `SEND_TIMEOUT` plus 30 s can set a waiting send job to `unknown`. The mock provider sends 1 s.
+  - No compose run measured the request rate against the mock provider after the change.

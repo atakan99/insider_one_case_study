@@ -190,6 +190,32 @@ describe('review dialog', () => {
     expect(toast.success).toHaveBeenCalledWith('Draft saved.')
   })
 
+  it('keeps the text typed while a save is in progress', async () => {
+    let finish!: (c: Campaign) => void
+    save.mockReturnValue(new Promise<Campaign>((resolve) => {
+      finish = resolve
+    }))
+    await make()
+    await type('[data-test="sms-input"]', 'Hey {{first_name}}')
+    await click('[data-test="save"]')
+    await type('[data-test="sms-input"]', 'Hey {{first_name}}, one more thing')
+    const c = campaign()
+    c.contents[0]!.sms = 'Hey {{first_name}} (saved)'
+    c.contents[0]!.email_body = 'Body from the server'
+    finish(c)
+    await flushPromises()
+    const sms = () => ($('[data-test="sms-input"]') as HTMLTextAreaElement).value
+    expect(sms()).toBe('Hey {{first_name}}, one more thing')
+    expect(toast.success).toHaveBeenCalledWith('Draft saved.')
+    // A field with no newer edit takes the saved value.
+    await pressTab('[data-test="channel-tab"][data-value="email"]')
+    expect(($('[data-test="body-input"]') as HTMLTextAreaElement).value).toBe('Body from the server')
+    await pressTab('[data-test="channel-tab"][data-value="sms"]')
+    // The newer text is not saved, so a close asks.
+    await click('[data-test="cancel"]')
+    expect($('[data-test="discard"]')).not.toBeNull()
+  })
+
   it('cancel asks only when dirty', async () => {
     const w = await make()
     await click('[data-test="cancel"]')

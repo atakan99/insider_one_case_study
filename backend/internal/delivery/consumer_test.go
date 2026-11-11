@@ -6,7 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -390,5 +392,76 @@ func TestConsumer_CancelDuringSend(t *testing.T) {
 	}
 	if n := e.pending(t); n != 0 {
 		t.Fatalf("pending = %d", n)
+	}
+}
+
+// A stall between the claim and the request (a slow database) must not let
+// the held sends leave together. The provider sees the real request times.
+func TestConsumer_PacesRequestsAfterDatabaseStall(t *testing.T) {
+	e := newConsumerEnv(t)
+	const perSec = 50
+	const n = 7
+	interval := time.Second / perSec
+
+	var mu sync.Mutex
+	var at []time.Time
+	mock := newMock(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		at = append(at, time.Now())
+		mu.Unlock()
+		mock.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	clk := RealClock()
+	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
+	c.Clock = clk
+	c.Limiter = NewLimiter(perSec, clk)
+
+	// Every consumer stalls after its claim until all n jobs are claimed.
+	var claimed sync.WaitGroup
+	claimed.Add(n)
+	stall := make(chan struct{})
+	go func() {
+		claimed.Wait()
+		close(stall)
+	}()
+	c.afterClaim = func() {
+		claimed.Done()
+		<-stall
+	}
+
+	if err := e.queue.Push(e.ctx, ChannelSMS, e.sms[:n]); err != nil {
+		t.Fatal(err)
+	}
+	es, err := e.queue.Read(e.ctx, ChannelSMS, n, time.Second)
+	if err != nil || len(es) != n {
+		t.Fatalf("Read = %v, %v", es, err)
+	}
+	var wg sync.WaitGroup
+	for _, en := range es {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := c.Handle(e.ctx, en); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(at) != n {
+		t.Fatalf("provider got %d requests, want %d", len(at), n)
+	}
+	slices.SortFunc(at, func(a, b time.Time) int { return a.Compare(b) })
+	// n requests need n-1 intervals. The margin allows for scheduler jitter.
+	if span, want := at[n-1].Sub(at[0]), (n-1)*interval*8/10; span < want {
+		t.Fatalf("%d requests arrived within %v, want at least %v at %d per second", n, span, want, perSec)
+	}
+	for i := 1; i < n; i++ {
+		if gap := at[i].Sub(at[i-1]); gap < interval/4 {
+			t.Fatalf("requests %d and %d are %v apart, want about %v", i-1, i, gap, interval)
+		}
 	}
 }

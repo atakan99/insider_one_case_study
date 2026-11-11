@@ -224,7 +224,22 @@ async function saveDraft() {
   banner.value = ''
   const sent = payload()
   try {
-    reset(await saveContents(props.campaignId, sent))
+    const c = await saveContents(props.campaignId, sent)
+    // The fields stay editable during the request. Text typed after the
+    // submit is newer than the response, so it stays and counts as unsaved.
+    const newer: Record<string, Partial<Content>> = {}
+    for (const s of sent) {
+      for (const f of FIELDS) {
+        const now = edits[s.language]?.[f]
+        if (now !== undefined && now !== s[f])
+          (newer[s.language] ??= {})[f] = now
+      }
+    }
+    reset(c)
+    for (const [l, fields] of Object.entries(newer)) {
+      if (edits[l])
+        Object.assign(edits[l], fields)
+    }
     toast.success('Draft saved.')
   }
   catch (err) {
