@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -419,16 +420,22 @@ func TestConsumer_PacesRequestsAfterDatabaseStall(t *testing.T) {
 	c.Clock = clk
 	c.Limiter = NewLimiter(perSec, clk)
 
-	// Every consumer stalls after its claim until all n jobs are claimed.
+	// Every consumer stalls after its first claim until all n jobs are
+	// claimed and each rate token is older than MaxPrep.
+	c.MaxPrep = 50 * time.Millisecond
 	var claimed sync.WaitGroup
 	claimed.Add(n)
 	stall := make(chan struct{})
 	go func() {
 		claimed.Wait()
+		time.Sleep(2 * c.MaxPrep)
 		close(stall)
 	}()
+	var claims atomic.Int32
 	c.afterClaim = func() {
-		claimed.Done()
+		if claims.Add(1) <= n {
+			claimed.Done()
+		}
 		<-stall
 	}
 
@@ -463,5 +470,57 @@ func TestConsumer_PacesRequestsAfterDatabaseStall(t *testing.T) {
 		if gap := at[i].Sub(at[i-1]); gap < interval/4 {
 			t.Fatalf("requests %d and %d are %v apart, want about %v", i-1, i, gap, interval)
 		}
+	}
+}
+
+// Consent that the user takes back during the token wait must stop the send.
+func TestConsumer_ConsentRevokedDuringWait(t *testing.T) {
+	e := newConsumerEnv(t)
+	srv := newMock(t)
+	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
+	var once sync.Once
+	e.clk.onSleep = func() {
+		once.Do(func() {
+			if _, err := e.pool.Exec(e.ctx, `UPDATE users SET sms_consent = false
+WHERE id = (SELECT user_id FROM send_jobs WHERE id = $1)`, e.sms[0]); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	es := e.entries(t, e.sms[0], 1)
+	if err := c.Handle(e.ctx, es[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := providerStats(t, srv.URL)["sms"].Requests; got != 0 {
+		t.Fatalf("requests = %d, want 0 after the consent was revoked", got)
+	}
+	if j := getJob(t, e.ctx, e.pool, e.sms[0]); j.Status != StatusSkipped || j.LastError != SkipNoConsent {
+		t.Fatalf("job = %s %q, want skipped %q", j.Status, j.LastError, SkipNoConsent)
+	}
+}
+
+// A job that waits for a token is not in sending, so the recovery cannot set
+// it to unknown while its consumer is alive.
+func TestConsumer_WaitingJobIsNotExpired(t *testing.T) {
+	e := newConsumerEnv(t)
+	srv := newMock(t)
+	c := e.consumer(NewProvider(srv.URL, 2*time.Second))
+	var once sync.Once
+	e.clk.onSleep = func() {
+		once.Do(func() {
+			if _, err := e.store.ExpireSending(e.ctx, testNow.Add(time.Hour), time.Second); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	es := e.entries(t, e.sms[0], 1)
+	if err := c.Handle(e.ctx, es[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := providerStats(t, srv.URL)["sms"].Requests; got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	if j := getJob(t, e.ctx, e.pool, e.sms[0]); j.Status != StatusSent {
+		t.Fatalf("job = %s, want sent", j.Status)
 	}
 }

@@ -114,3 +114,12 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Open questions:
   - A `Retry-After` longer than `SEND_TIMEOUT` plus 30 s can set a waiting send job to `unknown`. The mock provider sends 1 s.
   - No compose run measured the request rate against the mock provider after the change.
+
+## 2026-11-11 — second external review
+- Done: two findings of a second review. Both were correct, and both came from D-084.
+  - The worker order is again wait, claim, load, send. A rate token is good for 100 ms. If the claim and the load take longer, the send job goes back to `queued` and takes a new token (D-086, replaces D-084).
+  - `Store.Claimable` is back.
+- Verified with: `TestConsumer_ConsentRevokedDuringWait` and `TestConsumer_WaitingJobIsNotExpired` failed first (one request sent, and a job in `unknown`). They pass now. The pacing test of the first review also passes. These three tests passed 15 of 15 runs with `-race`. A compose run with `-p cc-verify` sent 1,803 requests: `rate_limited: 0`, `duplicate_deliveries: 0`, no token-age warning, and 98 sends at most in one second for each channel. `make verify` exit 0.
+- Next: user review of the changes. Nothing is committed.
+- Open questions:
+  - Sends whose tokens are less than 100 ms apart can leave together. This is 10 requests at most at 100 per second.

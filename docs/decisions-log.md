@@ -368,7 +368,7 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 ## D-053 The worker waits for a token before it claims
 
-**Replaced by D-084.**
+**D-084 replaced this order. D-086 restored it and added a limit on the token age.**
 
 - **Context:** A consumer can wait a long time for a rate-limit token. A claimed send job would show `sending` while it waits.
 - **Options:** Claim, then wait. Wait, then claim.
@@ -461,7 +461,7 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 ## D-066 Duplicate queue entries use no rate token
 
-**D-084 removed the `Store.Claimable` check. The lag gate of the recovery stays.**
+**D-084 removed the `Store.Claimable` check. D-086 restored it.**
 
 - **Context:** The recovery pushes stale queued jobs again. On a long backlog, an entry waits longer than the stale age. The recovery then adds a second entry for each job. Each duplicate entry used a rate token before `Claim` rejected it. This slowed the real sends and made the backlog bigger on each recovery pass.
 - **Options:** Raise the stale age. Let `Claim` stay the only check. Add a cheap check before the limiter and gate the re-push.
@@ -589,6 +589,8 @@ Claude writes this log. It records the implementation choices that Claude made o
 
 ## D-084 The worker waits for a token immediately before the request
 
+**Replaced by D-086. This order caused two defects.**
+
 - **Context:** The consumer took a rate token, then claimed and loaded the send job from Postgres (D-053). A slow database held sends that already had a token. When the database answered, these sends left together with the newly permitted sends. The channel could then go above 100 requests per second. A test with 7 held sends showed 7 requests in less than 1 ms.
 - **Options:** Keep the order and add a second limiter before the request. Move the token wait to the last step before the request.
 - **Choice:** The order is claim, load, wait, send. No database work comes between the token and the request. A cancel or an error before the request releases the send job to `queued`. `Store.Claimable` is removed, because the claim now rejects a duplicate entry before the token wait (D-066).
@@ -600,3 +602,17 @@ Claude writes this log. It records the implementation choices that Claude made o
 - **Options:** Disable the fields during the save. Keep the fields that changed after the submit.
 - **Choice:** After the response, a field that differs from the submitted value keeps the typed text. All other fields take the saved value. The kept text counts as unsaved, so a close asks before it discards.
 - **Why:** A disabled field drops the focus and stops the marketer for each save. The saved state stays correct, because "unsaved" compares the fields with the response.
+
+## D-086 A rate token is good for 100 ms
+
+- **Context:** D-084 put the token wait after the claim and the load. A review found two defects in that order. The load reads the consent, so a change of consent during the wait did not stop the send. The send job was `sending` during the wait, so the recovery could set a live send job to `unknown`. The first order (D-053) had neither defect, but a slow database could release held sends together.
+- **Options:**
+  - Keep the D-084 order and read the consent again after the wait. This puts database work after the token again.
+  - Keep the D-084 order and add a column that separates a waiting send job from a started request.
+  - Restore the D-053 order and limit the age of a token.
+- **Choice:** The order is wait, claim, load, send. The consumer measures the time from the token to the end of the load. If this time is more than `Consumer.MaxPrep` (100 ms), the consumer releases the send job to `queued`. It then takes a new token and claims again. `Store.Claimable` is back (D-066).
+- **Why:** The consent read is the last step before the request. A send job is `queued` during a token wait, so the recovery cannot expire it. One rule covers the three defects and needs no migration.
+- **Limits:**
+  - Sends whose tokens are less than 100 ms apart can leave together. At 100 per second, this is 10 requests at most. It is equal to the burst of the mock provider.
+  - When the claim and the load always take more than 100 ms, no message is sent. The worker logs a warning for each new token.
+  - A compose run with 1,803 requests gave `rate_limited: 0`, no such warning, and 98 sends at most in one second for each channel.

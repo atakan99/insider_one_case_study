@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 // Consumer handles the queue entries of one channel.
@@ -17,7 +18,10 @@ type Consumer struct {
 	MaxAttempts int
 	Jitter      func() float64
 	Log         *slog.Logger
-	Metrics     *Metrics // nil means no metrics
+	// MaxPrep is the longest time between a rate token and the request.
+	// The claim and the load run in this time. 0 means 100 ms.
+	MaxPrep time.Duration
+	Metrics *Metrics // nil means no metrics
 
 	// Hooks for tests. Both are nil in production.
 	afterClaim func()
@@ -31,53 +35,83 @@ func (c *Consumer) log() *slog.Logger {
 	return slog.Default()
 }
 
-// Handle runs one entry: claim, load, wait, send, write the result, acknowledge.
+// defaultMaxPrep is the default of Consumer.MaxPrep.
+const defaultMaxPrep = 100 * time.Millisecond
+
+// Handle runs one entry: wait, claim, load, send, write the result, acknowledge.
 // It returns an error only when the entry must stay unacknowledged.
 func (c *Consumer) Handle(ctx context.Context, e Entry) error {
 	// The writes after a claim use a context that cannot be cancelled: the
 	// result of an attempt must reach Postgres, also during a shutdown.
 	done := context.WithoutCancel(ctx)
 
-	// The claim comes before the rate token, so an entry for a job that
-	// cannot be claimed uses no token.
-	job, ok, err := c.Store.Claim(ctx, e.JobID, c.Clock.Now())
-	if err != nil {
-		return err
-	}
-	if !ok {
+	// An entry for a job that cannot be claimed must not use a rate token.
+	// On an error here, the normal path decides.
+	if ok, err := c.Store.Claimable(ctx, e.JobID, c.Clock.Now()); err == nil && !ok {
 		return c.Queue.Ack(done, c.Channel, e.StreamID)
 	}
-	if c.afterClaim != nil {
-		c.afterClaim()
+
+	maxPrep := c.MaxPrep
+	if maxPrep <= 0 {
+		maxPrep = defaultMaxPrep
 	}
-	// Nothing was sent yet, so the job can go back to the queue.
-	release := func(cause error) error {
-		if rerr := c.Store.Release(done, job.ID); rerr != nil {
-			c.log().Error("release job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
+	var job Job
+	var msg Message
+	for {
+		// The job is not claimed during the wait. It stays queued, so the
+		// recovery cannot take it for a request that hangs.
+		waitFrom := c.Clock.Now()
+		err := c.Limiter.Wait(ctx)
+		granted := c.Clock.Now()
+		c.Metrics.Waited(c.Channel, granted.Sub(waitFrom))
+		if err != nil {
+			return err
 		}
-		return cause
-	}
-	if err := ctx.Err(); err != nil {
-		return release(err)
-	}
 
-	msg, skip, err := c.Store.Load(ctx, job)
-	if err != nil {
-		return release(err)
-	}
-	if skip != "" {
-		c.log().Info("send job skipped", "job_id", job.ID, "channel", c.Channel, "attempt", job.Attempts, "error", skip)
-		return c.finish(done, e, job, Result{Status: StatusSkipped, LastError: skip})
-	}
+		var ok bool
+		job, ok, err = c.Store.Claim(ctx, e.JobID, c.Clock.Now())
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return c.Queue.Ack(done, c.Channel, e.StreamID)
+		}
+		if c.afterClaim != nil {
+			c.afterClaim()
+		}
+		// Nothing was sent yet, so the job can go back to the queue.
+		release := func() {
+			if rerr := c.Store.Release(done, job.ID); rerr != nil {
+				c.log().Error("release job", "job_id", job.ID, "channel", c.Channel, "error", rerr)
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			release()
+			return err
+		}
 
-	// The token wait is the last step before the request. No database work
-	// sits between the two, so a slow query cannot hold permitted sends and
-	// then let them leave together.
-	waitFrom := c.Clock.Now()
-	err = c.Limiter.Wait(ctx)
-	c.Metrics.Waited(c.Channel, c.Clock.Now().Sub(waitFrom))
-	if err != nil {
-		return release(err)
+		// The load reads the consent. It is the last step before the
+		// request, so a change of consent during the wait stops the send.
+		var skip string
+		msg, skip, err = c.Store.Load(ctx, job)
+		if err != nil {
+			release()
+			return err
+		}
+		if skip != "" {
+			c.log().Info("send job skipped", "job_id", job.ID, "channel", c.Channel, "attempt", job.Attempts, "error", skip)
+			return c.finish(done, e, job, Result{Status: StatusSkipped, LastError: skip})
+		}
+
+		// A token is good for MaxPrep. When the database was slower, the
+		// sends that it held would leave together and break the rate. Such
+		// a job goes back to queued and takes a new token.
+		prep := c.Clock.Now().Sub(granted)
+		if prep <= maxPrep {
+			break
+		}
+		c.log().Warn("send job prepared too slowly, new rate token", "job_id", job.ID, "channel", c.Channel, "took", prep)
+		release()
 	}
 
 	reference := fmt.Sprintf("%d:%d:%s", job.CampaignID, job.UserID, job.Channel)

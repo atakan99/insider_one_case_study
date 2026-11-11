@@ -151,16 +151,17 @@ The sender runs in the worker. Each channel has its own consumers and its own ra
 
 For each entry:
 
-1. **Claim.** `UPDATE send_jobs SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status IN ('queued', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= now())`. If no row changes, acknowledge the entry and stop. Another consumer has it, or it is done.
-2. **Load.** Read the user and the content of the send job language. Read the user with the consent condition of the channel.
-3. **Check.**
+1. **Wait** for a token of the channel rate limiter. The send job stays `queued` during the wait.
+2. **Claim.** `UPDATE send_jobs SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status IN ('queued', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= now())`. If no row changes, acknowledge the entry and stop. Another consumer has it, or it is done.
+3. **Load.** Read the user and the content of the send job language. Read the user with the consent condition of the channel.
+4. **Check.**
    - If the user has no consent now, set `skipped` with `no_consent`.
    - If the user has no phone or no email for the channel, set `skipped` with `no_contact`.
    - Render the template with the user's first name. Check the SMS against 160 runes, or the subject against 80 runes. If the text is over the limit, set `skipped` with `over_limit`. This must not happen, because the approval checked the longest first name.
-4. **Wait** for a token of the channel rate limiter. No database work comes between the token and the request (D-084).
-5. **Send** one HTTP request to the provider, with a timeout. Set `reference` to `<campaign id>:<user id>:<channel>`. Set no `Idempotency-Key` header.
-6. **Write the result** to Postgres. See "Retry strategy".
-7. **Acknowledge** the entry.
+5. **Check the token age.** If steps 2 to 4 took more than 100 ms, release the send job to `queued` and go to step 1 (D-086).
+6. **Send** one HTTP request to the provider, with a timeout. Set `reference` to `<campaign id>:<user id>:<channel>`. Set no `Idempotency-Key` header.
+7. **Write the result** to Postgres. See "Retry strategy".
+8. **Acknowledge** the entry.
 
 The email `body` is the rendered email body. The provider gets plain text. The email has no sender field, because the mock provider has none.
 
@@ -365,7 +366,7 @@ For each campaign, the worker logs the plan (campaign id, counts for each channe
 
 The user did not decide these points. Claude chose them. Each one gets an entry in `docs/decisions-log.md`.
 
-- The worker claims a send job, then waits for a rate-limit token immediately before the request (D-084 replaced the first order). On `SIGTERM`, a claimed send job with no request goes back to `queued`. Only a crash or a started request gives `unknown`.
+- The worker waits for a rate-limit token before it claims a send job. A token is good for 100 ms (D-086). On `SIGTERM`, a claimed send job with no request goes back to `queued`. Only a crash or a started request gives `unknown`.
 - A retry poller every 500 ms puts due retries on the stream. The recovery is the fallback.
 - A `retryable` column marks the failed send jobs that the marketer can retry. The api does not parse `last_error`.
 - 32 consumers per channel, because each `slow` response holds one consumer for 3 s.
