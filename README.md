@@ -6,13 +6,23 @@ A marketer writes a brief for a campaign. Claude makes a segment rule and SMS an
 
 You need Docker with Compose, `make` and `curl`. You do not need Go, Node or an API key.
 
+Start the app with one of these two commands:
+
 ```bash
 make up
 ```
 
-`make up` builds the images and starts all services in the background. Then it waits until each service answers its health check. The first start loads 5,000 seed users.
+```bash
+docker compose up
+```
 
-Open http://localhost:3000 when the command ends.
+`make up` builds the images and starts all services in the background. Then it waits until each service answers its health check.
+
+`docker compose up` needs no `make`. It stays in the foreground and shows the logs. It does not wait for the health checks.
+
+The first start loads 5,000 seed users.
+
+Open http://localhost:3000 when `make up` ends. With `docker compose up`, open it when the `frontend` service starts.
 
 | Service | URL | Notes |
 |---|---|---|
@@ -23,15 +33,17 @@ Open http://localhost:3000 when the command ends.
 
 Postgres and Redis have no host ports.
 
-To stop the services:
+To stop the services, use one of these two commands:
 
 ```bash
 make down
 ```
 
-`make down` keeps the data. To delete the users, the campaigns and the queue, run `docker compose down -v`.
+```bash
+docker compose down
+```
 
-`docker compose up` also starts the app. It stays in the foreground and does not run the health checks.
+The two commands keep the data. To delete the users, the campaigns and the queue, run `docker compose down -v`.
 
 ## Use the app
 
