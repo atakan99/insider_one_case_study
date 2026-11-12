@@ -38,5 +38,5 @@
 ## Dashboard 
 
 - **The page polls every 5 s.** SSE is only for the progress of one campaign.
-- **A basic dashboard using vue and shadcn components**. 
-- **It made for easy ui/ux**
+- **A basic dashboard using vue and shadcn components**. For speed.
+- **It made for easy ui/ux**Because ui/ux is as important as many backend decisions. 
