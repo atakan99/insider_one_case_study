@@ -153,3 +153,15 @@ Append one entry per session. Use the template below. Put the newest entry at th
 - Open questions:
   - The insert of a send job has no status guard. Only `PlanNext` inserts.
   - No compose run checked the new migration against a database with existing data. The trigger runs only on an update, so existing rows are not checked.
+
+## 2026-11-12 — session exports and personal data
+- Done: the fixes for a check of `ai-sessions/` before the submission. No backlog item and no app change.
+  - `export_sessions.py` has no user name and no fixed path. It also redacts the first part of the git email address (D-095).
+  - A new export wrote 32 sessions. Session 23 is back, and sessions 27 to 32 are new. The index has 32 rows and no broken link.
+  - The six links in `codex-review.md` are relative paths.
+- Verified with: a search of `ai-sessions/` for the user name, the first part of the email address and the home path found no match. A search for API keys and email addresses found no match. A script checked each link of the index against the folder.
+- Next: the user does a review and commits. Run the export again after the last session, because the export of session 32 stops in the middle of that session.
+- Open questions:
+  - `DECISIONS.md` still says "sqlc for fixed queries", and has the typo "wiht" and the heading "Dashboard (new)". The user owns this file.
+  - `README.md` has a change from a different session that is not committed.
+  - The GitHub account name of the repo URL stays in session 30.

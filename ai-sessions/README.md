@@ -30,3 +30,9 @@ Exported from Claude Code JSONL transcripts by `export_sessions.py`. Hidden syst
 | 24 | [Winter sale segment for Istanbul customers](24-winter-sale-segment-for-istanbul-customers.md) | 2026-11-11 11:49 | 2026-11-11 11:52 | 0 |
 | 25 | [Campaign message suggestions under input box](25-campaign-message-suggestions-under-input-box.md) | 2026-11-11 11:57 | 2026-11-11 12:03 | 0 |
 | 26 | [UI/UX readability improvements](26-ui-ux-readability-improvements.md) | 2026-11-11 15:26 | 2026-11-11 15:37 | 0 |
+| 27 | [Implicit state machines in main.go](27-implicit-state-machines-in-main-go.md) | 2026-11-11 16:27 | 2026-11-11 16:51 | 0 |
+| 28 | [Per-channel rate cap fix](28-per-channel-rate-cap-fix.md) | 2026-11-11 16:29 | 2026-11-11 16:34 | 0 |
+| 29 | [Recurring "unknown" in every run](29-recurring-unknown-in-every-run.md) | 2026-11-12 06:53 | 2026-11-12 06:53 | 0 |
+| 30 | [Submission readiness check for Insider One case study](30-submission-readiness-check-for-insider-one-case-study.md) | 2026-11-12 06:55 | 2026-11-12 07:03 | 0 |
+| 31 | [README.md setup instructions](31-readme-md-setup-instructions.md) | 2026-11-12 06:56 | 2026-11-12 06:57 | 0 |
+| 32 | [ai-sessions README broken links and personal data](32-ai-sessions-readme-broken-links-and-personal-data.md) | 2026-11-12 07:03 | 2026-11-12 07:04 | 0 |

@@ -7,12 +7,16 @@ Redacts email, home path, account ids and anything that looks like a secret.
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 HOME = str(Path.home())
-PROJECT_DIR = Path(HOME) / ".claude/projects/-Users-kaanaray-Desktop-projects-case-studies-insider-one"
+USER = Path.home().name
 OUT_DIR = Path(__file__).resolve().parent
+# Claude Code names a project's transcript folder after the repo path, with every
+# non-alphanumeric character replaced by "-".
+PROJECT_DIR = Path(HOME) / ".claude/projects" / re.sub(r"[^A-Za-z0-9]", "-", str(OUT_DIR.parent))
 MAX_RESULT = 2000
 MAX_INPUT = 3000
 
@@ -22,9 +26,25 @@ REDACTIONS = [
     (re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9\-]{10,}|AKIA[0-9A-Z]{16})\b"), "[REDACTED_TOKEN]"),
     (re.compile(r"[A-Za-z0-9._%+\-]+@(gmail|hotmail|outlook|yahoo|icloud)\.com", re.I), "[REDACTED_EMAIL]"),
     (re.compile(re.escape(HOME)), "~"),
-    (re.compile(r"-Users-kaanaray-"), "-Users-USER-"),
-    (re.compile(r"kaanaray"), "USER"),
+    (re.compile(re.escape(USER)), "USER"),
 ]
+
+
+def git_email_local_part() -> str:
+    """Local part of the committer's email, read at run time so it is never written in this file."""
+    try:
+        email = subprocess.run(["git", "config", "user.email"], cwd=OUT_DIR, capture_output=True,
+                               text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return email.split("@")[0]
+
+
+_local = git_email_local_part()
+if len(_local) >= 4:
+    # Goes after the full-address rule and before the user-name rule.
+    REDACTIONS.insert(4, (re.compile(re.escape(_local), re.I), "[REDACTED_EMAIL_USER]"))
+
 STRIP_TAGS = re.compile(
     r"<(system-reminder|EXTREMELY_IMPORTANT|EXTREMELY-IMPORTANT|SUBAGENT-STOP|local-command-caveat)>.*?</\1>",
     re.S,

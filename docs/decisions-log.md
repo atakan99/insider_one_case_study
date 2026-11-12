@@ -686,3 +686,11 @@ Claude writes this log. It records the implementation choices that Claude made o
   - `campaign.Status` has constants for all five values. `delivery.Store` and `Progress.Status` use them.
   - The frontend has `SendableStatus`, the campaign status without `draft`. `Progress.status` and `currentStep` use it. `currentStep` has no `default` case.
 - **Why:** The Go compiler now rejects a send job status where a campaign status is expected. TypeScript rejects a new status that has no step. The values in the database and the API do not change.
+
+## D-095 The export script has no personal data
+
+- **Context:** `export_sessions.py` had the macOS user name in its redaction rules and in the transcript path. The exports also showed the first part of the email address, because the rule for email needs the `@` sign.
+- **Choice:**
+  - The script reads the user name from the home directory. It makes the transcript path from the repo path.
+  - The script reads the email address from `git config user.email` when it runs. It redacts the part before the `@` sign.
+- **Why:** The script can redact a name only if it knows the name. Thus it reads each name from the machine and stores none. The script also works for a different user and a different repo path.

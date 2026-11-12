@@ -332,7 +332,7 @@ The metadata format matches what I expected. Running the export now:
 
 **🔧 Bash** _Run export and check for leaks_
 ```bash
-python3 -I ai-sessions/export_sessions.py && cat ai-sessions/README.md && wc -c ai-sessions/*.md && echo "--- leak check" && grep -n -i -E "USER|atakanaray|@gmail|sk-ant|accountUuid|organizationUuid|/Users/" ai-sessions/*.md | head; grep -c "REDACTED" ai-sessions/*.md
+python3 -I ai-sessions/export_sessions.py && cat ai-sessions/README.md && wc -c ai-sessions/*.md && echo "--- leak check" && grep -n -i -E "USER|[REDACTED_EMAIL_USER]|@gmail|sk-ant|accountUuid|organizationUuid|/Users/" ai-sessions/*.md | head; grep -c "REDACTED" ai-sessions/*.md
 ```
 
 <details><summary>Result</summary>
@@ -464,7 +464,7 @@ s=s.replace('''    sessions = []
             continue''')
 open(p,'w').write(s)
 EOF
-python3 -I ai-sessions/export_sessions.py 2>/dev/null; ls ai-sessions; grep -n -E "USER|atakanaray@|86b54a39|dd0c630f|sk-ant-[A-Za-z0-9]{10}" ai-sessions/*.md | grep -v "export_sessions" | head
+python3 -I ai-sessions/export_sessions.py 2>/dev/null; ls ai-sessions; grep -n -E "USER|[REDACTED_EMAIL_USER]@|86b54a39|dd0c630f|sk-ant-[A-Za-z0-9]{10}" ai-sessions/*.md | grep -v "export_sessions" | head
 ```
 
 <details><summary>Result</summary>
